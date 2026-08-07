@@ -84,5 +84,6 @@ querypilot/
 
 - `querypilot/db/connection.py`：扩展连接默认只读；新增 `QueryResult` / `ExplainResult`、`connection()` 上下文、`execute()`、`explain()`（供 L2 围栏）
 - `querypilot/llm/chat.py`：统一 `chat` / `generate` / `generate_json`；支持 JSON fence 解析与 `json_object` 响应格式
-- 测试：`tests/test_db.py`、`tests/test_llm_chat.py`（含内存库 + 项目 DuckDB 集成冒烟）
+- 测试：`tests/test_db.py`、`tests/test_llm_chat.py`
+  - LLM：本地 JSON 解析单测 + **真实 DeepSeek** `chat` / `generate` / `generate_json`（无 Key 则 skip）
 

@@ -1,33 +1,32 @@
-"""Unit tests for LLM chat helpers (no live API required)."""
+"""Tests for LLM chat helpers.
+
+- Local unit tests: JSON parsing (no network).
+- Live integration tests: real DeepSeek API via ``querypilot.llm`` (same path as production).
+  Skipped when ``DEEPSEEK_API_KEY`` is missing or still a placeholder.
+"""
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-from typing import Any
-
 import pytest
 
-from querypilot.llm import JsonParseError, generate, generate_json, parse_json_content
-from querypilot.llm.chat import chat
+from querypilot.config import get_settings
+from querypilot.llm import JsonParseError, chat, generate, generate_json, parse_json_content
 
 
-class _FakeCompletions:
-    def __init__(self, content: str) -> None:
-        self._content = content
-        self.last_kwargs: dict[str, Any] | None = None
-
-    def create(self, **kwargs: Any) -> SimpleNamespace:
-        self.last_kwargs = kwargs
-        return SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content=self._content))],
-            model=kwargs.get("model", "fake-model"),
-            usage=SimpleNamespace(prompt_tokens=3, completion_tokens=5, total_tokens=8),
-        )
+def _api_key_ready() -> bool:
+    key = get_settings().deepseek_api_key
+    return bool(key) and not key.startswith("sk-your")
 
 
-class _FakeClient:
-    def __init__(self, content: str) -> None:
-        self.chat = SimpleNamespace(completions=_FakeCompletions(content))
+requires_live_llm = pytest.mark.skipif(
+    not _api_key_ready(),
+    reason="DEEPSEEK_API_KEY not set (or still placeholder in .env)",
+)
+
+
+# ---------------------------------------------------------------------------
+# Local unit tests (no LLM)
+# ---------------------------------------------------------------------------
 
 
 def test_parse_json_content_plain():
@@ -49,30 +48,42 @@ def test_parse_json_content_rejects_array():
         parse_json_content("[1, 2]")
 
 
-def test_chat_with_fake_client():
-    client = _FakeClient("hello")
-    result = chat([{"role": "user", "content": "hi"}], client=client, model="m")
-    assert result.content == "hello"
-    assert result.model == "m"
-    assert result.total_tokens == 8
+# ---------------------------------------------------------------------------
+# Live API tests (same code path as runtime)
+# ---------------------------------------------------------------------------
 
 
-def test_generate_builds_messages():
-    client = _FakeClient("ok")
-    text = generate("ping", system="sys", client=client, model="m")
-    assert text == "ok"
-    kwargs = client.chat.completions.last_kwargs
-    assert kwargs is not None
-    assert kwargs["messages"] == [
-        {"role": "system", "content": "sys"},
-        {"role": "user", "content": "ping"},
-    ]
+@requires_live_llm
+def test_live_chat_returns_content():
+    result = chat(
+        [{"role": "user", "content": "只回复两个字母：OK"}],
+        max_tokens=16,
+        temperature=0.0,
+    )
+    assert result.content
+    assert "OK" in result.content.upper()
+    assert result.model
+    assert result.total_tokens is None or result.total_tokens > 0
 
 
-def test_generate_json_uses_json_object_format():
-    client = _FakeClient('{"a": 1}')
-    data = generate_json("return json", client=client, model="m")
-    assert data == {"a": 1}
-    kwargs = client.chat.completions.last_kwargs
-    assert kwargs is not None
-    assert kwargs["response_format"] == {"type": "json_object"}
+@requires_live_llm
+def test_live_generate_text():
+    text = generate(
+        "只回复两个字母：OK",
+        system="你是简洁助手，严格按用户要求回复。",
+        max_tokens=16,
+        temperature=0.0,
+    )
+    assert "OK" in text.upper()
+
+
+@requires_live_llm
+def test_live_generate_json_object():
+    data = generate_json(
+        '返回一个 JSON 对象，包含字段 ok（布尔值 true）和 echo（字符串 "ping"）。不要其它字段。',
+        system="You respond with a JSON object only.",
+        max_tokens=64,
+        temperature=0.0,
+    )
+    assert data.get("ok") is True
+    assert data.get("echo") == "ping"
