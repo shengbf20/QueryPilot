@@ -22,6 +22,11 @@ code_types:
     column_refs:
       - table: ads_cust_info_d
         column: cust_lvl_cd
+  "200":
+    label: 账户状态
+    column_refs:
+      - table: ads_cust_info_d
+        column: cust_status
 
 sys_source:
   nm: 普通账户

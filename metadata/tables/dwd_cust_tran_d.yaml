@@ -1,0 +1,66 @@
+table: dwd_cust_tran_d
+alias: 客户交易表
+layer: dwd
+description: 客户交易类买卖日事实表，记录每日买入/卖出的次数、数量、金额、佣金与费用。
+primary_key: [data_dt, pty_id, prdt_id, sys_source, ccy]
+usage:
+  - 交易行为分析（买入/卖出金额、频次）
+  - 活跃客户识别与产品交易统计
+notes:
+  - buy_* 为买入指标，sell_* 为卖出指标
+  - 与 dim_product 通过 prdt_id 关联获取产品名称
+columns:
+  - name: data_dt
+    type: VARCHAR
+    description: 日期
+    format: YYYYMMDD
+  - name: pty_id
+    type: VARCHAR
+    description: 客户号
+  - name: prdt_id
+    type: VARCHAR
+    description: 产品ID
+  - name: sys_source
+    type: VARCHAR
+    description: 系统来源
+    enum_ref: sys_source
+  - name: ccy
+    type: VARCHAR
+    description: 币种
+    enum_ref: ccy
+  - name: buy_cnt
+    type: INTEGER
+    description: 买入次数
+    aliases: [买入笔数]
+  - name: buy_mnt
+    type: DECIMAL
+    description: 买入数量
+    aliases: [买入份额]
+  - name: buy_rake
+    type: DECIMAL
+    description: 买入佣金
+  - name: buy_amt
+    type: DECIMAL
+    description: 买入金额
+    aliases: [买入交易额, 买入总额]
+  - name: buy_fare
+    type: DECIMAL
+    description: 买入费用
+  - name: sell_cnt
+    type: INTEGER
+    description: 卖出次数
+    aliases: [卖出笔数]
+  - name: sell_mnt
+    type: DECIMAL
+    description: 卖出数量
+    aliases: [卖出份额]
+  - name: sell_rake
+    type: DECIMAL
+    description: 卖出佣金
+  - name: sell_amt
+    type: DECIMAL
+    description: 卖出金额
+    aliases: [卖出交易额, 卖出总额]
+  - name: sell_fare
+    type: DECIMAL
+    description: 卖出费用

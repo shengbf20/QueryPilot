@@ -1,0 +1,31 @@
+table: dim_branch
+alias: 营业部表
+layer: dim
+description: 营业部维表，记录营业部及其上级分公司/营业部层级关系。
+primary_key: [data_dt, org_id]
+usage:
+  - 按营业部/分公司统计客户
+  - 与客户信息表通过 org_id 关联
+notes:
+  - org_name、up_org_name 已脱敏
+  - 与客户信息表 Join 时通常只用 org_id，不必加 data_dt 条件
+columns:
+  - name: data_dt
+    type: VARCHAR
+    description: 日期
+    format: YYYYMMDD
+  - name: org_id
+    type: VARCHAR
+    description: 营业部ID
+    aliases: [营业部编号]
+  - name: org_name
+    type: VARCHAR
+    description: 营业部名称（脱敏）
+    aliases: [营业部, 网点名称]
+  - name: up_org_id
+    type: VARCHAR
+    description: 上级营业部/分公司ID
+  - name: up_org_name
+    type: VARCHAR
+    description: 上级营业部/分公司名称（脱敏）
+    aliases: [分公司, 上级机构]

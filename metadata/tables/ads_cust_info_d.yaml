@@ -1,0 +1,82 @@
+table: ads_cust_info_d
+alias: 客户信息表
+layer: ads
+description: 客户基础属性宽表，用于营销人群筛选（等级、性别、年龄、地域、营业部等）。
+primary_key: [pty_id]
+usage:
+  - 客户特征筛选与人群圈选
+  - 与资产/交易/持仓表通过 pty_id 关联
+notes:
+  - data_dt 固定为 20260531（客户信息快照日）
+  - 与事实表 data_dt 不对齐，跨表 Join 默认只用 pty_id，不要默认加 data_dt 条件
+  - name 字段已脱敏
+columns:
+  - name: data_dt
+    type: VARCHAR
+    description: 日期
+    format: YYYYMMDD
+  - name: pty_id
+    type: VARCHAR
+    description: 客户号
+    aliases: [客户ID, 客户编号]
+  - name: sor_pty_id
+    type: VARCHAR
+    description: 经纪客户号
+  - name: cust_lvl_cd
+    type: VARCHAR
+    description: 客户等级代码
+    aliases: [客户等级, 会员等级]
+    code_type_id: "100"
+    lookup: dim_public
+  - name: cust_status
+    type: VARCHAR
+    description: 账户状态代码
+    aliases: [账户状态, 客户状态]
+    code_type_id: "200"
+    lookup: dim_public
+  - name: cust_type
+    type: VARCHAR
+    description: 客户类型
+    enum_values:
+      P: 个人客户
+  - name: prov_name
+    type: VARCHAR
+    description: 省份
+    aliases: [省, 所在省份]
+  - name: city_name
+    type: VARCHAR
+    description: 城市
+    aliases: [市, 所在城市]
+  - name: birth_dt
+    type: VARCHAR
+    description: 出生日期
+    format: YYYYMMDD
+  - name: cust_age
+    type: BIGINT
+    description: 年龄
+    aliases: [岁数, 客户年龄]
+  - name: name
+    type: VARCHAR
+    description: 姓名（脱敏）
+  - name: gender_cd
+    type: VARCHAR
+    description: 性别代码
+    aliases: [性别]
+    code_type_id: "500"
+    lookup: dim_public
+  - name: edu_cd
+    type: VARCHAR
+    description: 学历代码
+    aliases: [学历, 教育程度]
+    code_type_id: "600"
+    lookup: dim_public
+  - name: prof_cd
+    type: VARCHAR
+    description: 职业类型编码
+    aliases: [职业, 行业]
+    code_type_id: "700"
+    lookup: dim_public
+  - name: org_id
+    type: VARCHAR
+    description: 所属营业部ID
+    aliases: [营业部, 营业部ID]

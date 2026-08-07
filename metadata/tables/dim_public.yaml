@@ -1,0 +1,25 @@
+table: dim_public
+alias: 公共维表
+layer: dim
+description: 标准化编码字典表，将各类业务代码映射为可读的中文描述。
+primary_key: [code, code_type_id]
+usage:
+  - 解码客户表中的等级、性别、学历、职业、状态等编码字段
+  - Join 时需同时匹配 code 与 code_type_id
+notes:
+  - describe 列为字典描述文本（SQL 中为保留字，查询时需加双引号）
+  - 常用 code_type_id：100客户等级、200账户状态、500性别、600学历、700职业
+columns:
+  - name: code
+    type: VARCHAR
+    description: 标准字典码
+    aliases: [编码, 代码]
+  - name: code_type_id
+    type: VARCHAR
+    description: 标准字典码类型
+    aliases: [字典类型]
+  - name: describe
+    type: VARCHAR
+    description: 标准字典描述
+    aliases: [描述, 中文含义, 名称]
+    sql_name: '"describe"'

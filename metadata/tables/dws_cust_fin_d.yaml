@@ -1,0 +1,45 @@
+table: dws_cust_fin_d
+alias: 客户资金流动表
+layer: dws
+description: 客户资金流动日事实表，记录现金与证券的转入转出及指定转入/撤指定转出。
+primary_key: [data_dt, pty_id, sys_source]
+usage:
+  - 资金流入流出分析
+  - 识别大额转入/转出客户
+notes:
+  - sys_source 区分普通账户(nm)与信用账户(fc)
+  - tran_in/tran_out 含证券转入转出、托管转入转出、转托转入转出
+columns:
+  - name: data_dt
+    type: VARCHAR
+    description: 日期
+    format: YYYYMMDD
+  - name: pty_id
+    type: VARCHAR
+    description: 客户号
+  - name: sys_source
+    type: VARCHAR
+    description: 系统来源
+    enum_ref: sys_source
+  - name: cash_in
+    type: DECIMAL
+    description: 现金转入
+    aliases: [入金, 现金流入]
+  - name: cash_out
+    type: DECIMAL
+    description: 现金转出
+    aliases: [出金, 现金流出]
+  - name: tran_in
+    type: DECIMAL
+    description: 证券转入（含托管转入、转托转入）
+    aliases: [证券流入]
+  - name: tran_out
+    type: DECIMAL
+    description: 证券转出（含托管转出、转托转出）
+    aliases: [证券流出]
+  - name: assign_in
+    type: DECIMAL
+    description: 指定转入
+  - name: assign_out
+    type: DECIMAL
+    description: 撤指定转出

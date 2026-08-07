@@ -1,0 +1,36 @@
+table: dws_cust_aset_d
+alias: 客户资产表
+layer: dws
+description: 客户资产日汇总事实表，记录普通/信用账户的总资产与现金资产。
+primary_key: [data_dt, pty_id]
+usage:
+  - 资产规模筛选（如资产大于100万）
+  - 客户分层与营销名单圈选
+notes:
+  - data_dt 为交易日，范围约 20260130 起，不含 20260531
+  - 与客户信息表 Join 时用 pty_id；若需指定日期，取 MAX(data_dt) 或用户指定日期
+columns:
+  - name: data_dt
+    type: VARCHAR
+    description: 日期
+    format: YYYYMMDD
+  - name: pty_id
+    type: VARCHAR
+    description: 客户号
+    aliases: [客户ID]
+  - name: nm_tot_aset
+    type: DECIMAL
+    description: 普通账户总资产
+    aliases: [总资产, 普通账户资产, 资产]
+  - name: nm_bal
+    type: DECIMAL
+    description: 普通账户现金资产
+    aliases: [现金资产, 普通账户余额, 现金余额]
+  - name: fc_pur_aset
+    type: DECIMAL
+    description: 信用账户净资产
+    aliases: [信用账户资产, 信用净资产]
+  - name: fc_bal
+    type: DECIMAL
+    description: 信用账户现金资产
+    aliases: [信用账户现金]

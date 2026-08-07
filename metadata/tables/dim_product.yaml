@@ -1,0 +1,38 @@
+table: dim_product
+alias: 产品信息表
+layer: dim
+description: 产品属性维表，包含产品名称、代码及一/二级分类。
+primary_key: [prdt_id]
+usage:
+  - 产品名称查询与产品分类筛选
+  - 与持仓/交易表通过 prdt_id 关联
+columns:
+  - name: prdt_id
+    type: VARCHAR
+    description: 产品ID
+    aliases: [产品编号]
+  - name: prdt_name
+    type: VARCHAR
+    description: 产品名称
+    aliases: [产品, 证券名称, 基金名称]
+  - name: sor_prdt_id
+    type: VARCHAR
+    description: 产品代码
+    aliases: [证券代码]
+  - name: market_id
+    type: VARCHAR
+    description: 市场ID
+  - name: prdt_type_id
+    type: VARCHAR
+    description: 产品二级分类ID
+  - name: prdt_type_name
+    type: VARCHAR
+    description: 产品二级分类名称
+    aliases: [产品二级分类, 产品类型]
+  - name: up_prdt_type_id
+    type: VARCHAR
+    description: 产品一级分类ID
+  - name: up_prdt_type_name
+    type: VARCHAR
+    description: 产品一级分类名称
+    aliases: [产品一级分类, 产品大类]
