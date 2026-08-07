@@ -2,7 +2,7 @@
 
 > 记录范围：Schema 剪枝、单次 LLM SQL 生成、L1/L2 安全围栏、结果探针与端到端编排。  
 > 记录时间：2026-08-07（规划落档）  
-> 状态：🚧 进行中（步骤 1–3 已完成）  
+> 状态：🚧 进行中（步骤 1–4 已完成）  
 > 前置依赖：阶段一已完成（`load_metadata()` / Join-Graph / 编码字典）
 
 ---
@@ -75,7 +75,7 @@ querypilot/
 | 1 执行底座 | ✅ | `db`：`get_connection` / `execute` / `explain`；`llm`：`chat` / `generate` / `generate_json`；含真实 DeepSeek 测试 |
 | 2 Schema Pruner | ✅ | `metadata_engine/schema_pruner.py`：别名检索 + 客户中枢补全 + Join-Graph 扩展；12 个单测 + `demo_schema_pruner.py` |
 | 3 Prompt / SQL 生成 | ✅ | `agent/prompt.py` + `sql_generator.py`；few-shots YAML；16 测（含 3 个真实 LLM + EXPLAIN） |
-| 4 L1 AST | ⏳ | |
+| 4 L1 AST | ✅ | `safety/l1_ast.py`：只读拦截 / 表白名单 / 列名模糊修正；23 测（含 live 生成→L1） |
 | 5 L2 + 1-Shot | ⏳ | |
 | 6 Pipeline + 探针 | ⏳ | |
 | 7 CLI / Demo / 测试 | ⏳ | |
@@ -106,4 +106,13 @@ querypilot/
   - 本地：few-shot 加载、Prompt 组装、JSON 解析、假 client 端到端
   - 真实 DeepSeek：3 条问句生成 SQL，并用 DuckDB `EXPLAIN` 校验可解析
 - 演示：`scripts/demo_sql_generator.py`
+
+### 步骤 4 明细（2026-08-07）
+
+- `querypilot/safety/models.py`：`L1GuardResult` / `GuardViolation` / `ColumnFix`
+- `querypilot/safety/l1_ast.py`：`guard_sql()`（sqlglot / DuckDB）
+  - 拦截写操作与多语句；表白名单（支持 pruned `allowed_tables`）
+  - CTE 别名不视为物理表；列名 `difflib` 模糊修正（可关闭）
+  - 无法修正的未知列 → block
+- 测试：`tests/test_safety_l1.py`（23）— 危险语句、越权表、模糊修正、CTE、live `generate_sql`→L1
 
