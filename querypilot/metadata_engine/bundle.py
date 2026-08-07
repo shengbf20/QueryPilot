@@ -64,6 +64,12 @@ class MetadataBundle:
         parts = [self.format_table_schema(name, include_values=include_values) for name in table_names]
         return "\n\n".join(parts)
 
+    def prune_schema(self, question: str, **kwargs: object):
+        """Shortcut to SchemaPruner.prune for this bundle."""
+        from querypilot.metadata_engine.schema_pruner import SchemaPruner
+
+        return SchemaPruner(self).prune(question, **kwargs)  # type: ignore[arg-type]
+
 
 def load_metadata(
     *,

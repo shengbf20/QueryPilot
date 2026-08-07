@@ -2,7 +2,7 @@
 
 > 记录范围：Schema 剪枝、单次 LLM SQL 生成、L1/L2 安全围栏、结果探针与端到端编排。  
 > 记录时间：2026-08-07（规划落档）  
-> 状态：🚧 进行中（步骤 1 已完成）  
+> 状态：🚧 进行中（步骤 1–2 已完成）  
 > 前置依赖：阶段一已完成（`load_metadata()` / Join-Graph / 编码字典）
 
 ---
@@ -72,8 +72,8 @@ querypilot/
 
 | 步骤 | 状态 | 备注 |
 |------|------|------|
-| 1 执行底座 | ✅ | `db`：`get_connection` / `execute` / `explain`；`llm`：`chat` / `generate` / `generate_json`；16 个单测通过 |
-| 2 Schema Pruner | ⏳ | |
+| 1 执行底座 | ✅ | `db`：`get_connection` / `execute` / `explain`；`llm`：`chat` / `generate` / `generate_json`；含真实 DeepSeek 测试 |
+| 2 Schema Pruner | ✅ | `metadata_engine/schema_pruner.py`：别名检索 + 客户中枢补全 + Join-Graph 扩展；12 个单测 + `demo_schema_pruner.py` |
 | 3 Prompt / SQL 生成 | ⏳ | |
 | 4 L1 AST | ⏳ | |
 | 5 L2 + 1-Shot | ⏳ | |
@@ -86,4 +86,13 @@ querypilot/
 - `querypilot/llm/chat.py`：统一 `chat` / `generate` / `generate_json`；支持 JSON fence 解析与 `json_object` 响应格式
 - 测试：`tests/test_db.py`、`tests/test_llm_chat.py`
   - LLM：本地 JSON 解析单测 + **真实 DeepSeek** `chat` / `generate` / `generate_json`（无 Key 则 skip）
+
+### 步骤 2 明细（2026-08-07）
+
+- `querypilot/metadata_engine/schema_pruner.py`：`SchemaPruner` / `prune_schema` / `PrunedSchema`
+  - 表/字段别名与描述加权检索；营销用语扩展（如「女性」→性别、「买过」→交易）
+  - 事实表 +「客户」线索时自动补 `ads_cust_info_d`；`dim_public` 默认不进 seed（枚举走 Value Descriptor）
+  - Join-Graph `expand_tables` 补全中间表；`format_for_prompt` 输出精简 Schema + 约定 + 建议 Join
+- `MetadataBundle.prune_schema()` 快捷入口
+- 测试：`tests/test_schema_pruner.py`（12）；演示：`scripts/demo_schema_pruner.py`
 

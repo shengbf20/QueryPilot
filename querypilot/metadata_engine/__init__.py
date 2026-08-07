@@ -19,6 +19,13 @@ from querypilot.metadata_engine.metadata_validator import (
     validate_metadata_all,
 )
 from querypilot.metadata_engine.models import ColumnMeta, TableMeta
+from querypilot.metadata_engine.schema_pruner import (
+    ColumnHit,
+    PrunedSchema,
+    SchemaPruner,
+    TableHit,
+    prune_schema,
+)
 from querypilot.metadata_engine.validator import ValidationResult, validate_all
 from querypilot.metadata_engine.value_descriptors import (
     ValueDescriptorRegistry,
@@ -34,6 +41,10 @@ from querypilot.metadata_engine.value_validator import (
 __all__ = [
     "ColumnMeta",
     "TableMeta",
+    "ColumnHit",
+    "TableHit",
+    "PrunedSchema",
+    "SchemaPruner",
     "MetadataBundle",
     "MetadataValidationResult",
     "ValidationResult",
@@ -52,6 +63,7 @@ __all__ = [
     "ResolvedPath",
     "create_join_graph_engine",
     "format_join_clause",
+    "prune_schema",
     "validate_all",
     "validate_metadata_all",
     "validate_join_graph_only",
