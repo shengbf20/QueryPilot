@@ -1,3 +1,30 @@
-# Few-shot CoT examples for NL2SQL (phase 1, step 4)
+# Few-shot CoT examples for NL2SQL (marketing analytics)
 
-examples: []
+examples:
+  - question: 有多少年龄大于30岁的女性客户？
+    rationale: 客户属性在 ads_cust_info_d；性别用枚举码过滤；单表聚合无需 CTE。
+    sql: |
+      SELECT COUNT(*) AS cnt
+      FROM ads_cust_info_d
+      WHERE cust_age > 30
+        AND gender_cd = '5000003'
+
+  - question: 总资产超过100万的客户有多少人？
+    rationale: 客户与资产按 pty_id 关联，不要用 data_dt 做 Join；资产取最新快照可用子查询。
+    sql: |
+      WITH latest_asset AS (
+        SELECT pty_id, nm_tot_aset
+        FROM dws_cust_aset_d
+        WHERE data_dt = (SELECT MAX(data_dt) FROM dws_cust_aset_d)
+      )
+      SELECT COUNT(*) AS cnt
+      FROM ads_cust_info_d AS c
+      JOIN latest_asset AS a ON c.pty_id = a.pty_id
+      WHERE a.nm_tot_aset > 1000000
+
+  - question: 买过产品的客户买入交易额合计是多少？
+    rationale: 交易事实表关联产品维表；按 prdt_id / pty_id 连接。
+    sql: |
+      SELECT SUM(t.buy_amt) AS total_buy_amt
+      FROM dwd_cust_tran_d AS t
+      JOIN dim_product AS p ON t.prdt_id = p.prdt_id
