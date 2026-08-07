@@ -1,0 +1,33 @@
+# Value Descriptor: enum field → business meaning
+# Maps code_type_id in dim_public to table columns
+
+code_types:
+  "500":
+    label: 性别
+    column_refs:
+      - table: ads_cust_info_d
+        column: gender_cd
+  "600":
+    label: 学历
+    column_refs:
+      - table: ads_cust_info_d
+        column: edu_cd
+  "700":
+    label: 职业
+    column_refs:
+      - table: ads_cust_info_d
+        column: prof_cd
+  "100":
+    label: 客户等级
+    column_refs:
+      - table: ads_cust_info_d
+        column: cust_lvl_cd
+
+sys_source:
+  nm: 普通账户
+  fc: 信用账户
+
+ccy:
+  "0": 人民币
+  "1": 美元
+  "2": 港币

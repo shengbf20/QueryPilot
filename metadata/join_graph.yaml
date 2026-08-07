@@ -1,0 +1,57 @@
+# Join-Graph: table topology and join paths
+# NOTE: ads_cust_info_d (20260531) and fact tables have non-overlapping data_dt;
+#       cross-table joins should use pty_id, not data_dt, unless user specifies a date.
+
+tables:
+  ads_cust_info_d:
+    alias: 客户信息表
+    primary_key: [pty_id]
+  dws_cust_aset_d:
+    alias: 客户资产表
+    primary_key: [data_dt, pty_id]
+  dwd_cust_hold_d:
+    alias: 客户持仓表
+    primary_key: [data_dt, pty_id, prdt_id, sys_source, ccy]
+  dwd_cust_tran_d:
+    alias: 客户交易表
+    primary_key: [data_dt, pty_id, prdt_id, sys_source, ccy]
+  dws_cust_fin_d:
+    alias: 客户资金流动表
+    primary_key: [data_dt, pty_id, sys_source]
+  dim_product:
+    alias: 产品信息表
+    primary_key: [prdt_id]
+  dim_public:
+    alias: 公共维表
+    primary_key: [code, code_type_id]
+  dim_branch:
+    alias: 营业部表
+    primary_key: [data_dt, org_id]
+
+edges:
+  - from: ads_cust_info_d
+    to: dws_cust_aset_d
+    on: [pty_id]
+    note: 日期不对齐，不要默认加 data_dt 条件
+  - from: ads_cust_info_d
+    to: dwd_cust_hold_d
+    on: [pty_id]
+  - from: ads_cust_info_d
+    to: dwd_cust_tran_d
+    on: [pty_id]
+  - from: ads_cust_info_d
+    to: dws_cust_fin_d
+    on: [pty_id]
+  - from: ads_cust_info_d
+    to: dim_branch
+    on: [org_id]
+  - from: dwd_cust_hold_d
+    to: dim_product
+    on: [prdt_id]
+  - from: dwd_cust_tran_d
+    to: dim_product
+    on: [prdt_id]
+  - from: ads_cust_info_d
+    to: dim_public
+    on: [gender_cd=code]
+    note: code_type_id = '500' for gender

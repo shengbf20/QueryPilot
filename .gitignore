@@ -6,4 +6,9 @@ venv/
 *.db
 *.duckdb
 db/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
 .DS_Store
