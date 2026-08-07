@@ -1,7 +1,18 @@
 # Value Descriptor: enum field → business meaning
-# Maps code_type_id in dim_public to table columns
+# Layer 1 (this file): column → code_type_id mapping + static enums
+# Layer 2 (dim_public table): code → describe runtime lookup
 
 code_types:
+  "100":
+    label: 客户等级
+    column_refs:
+      - table: ads_cust_info_d
+        column: cust_lvl_cd
+  "200":
+    label: 账户状态
+    column_refs:
+      - table: ads_cust_info_d
+        column: cust_status
   "500":
     label: 性别
     column_refs:
@@ -17,22 +28,19 @@ code_types:
     column_refs:
       - table: ads_cust_info_d
         column: prof_cd
-  "100":
-    label: 客户等级
-    column_refs:
-      - table: ads_cust_info_d
-        column: cust_lvl_cd
-  "200":
-    label: 账户状态
-    column_refs:
-      - table: ads_cust_info_d
-        column: cust_status
 
-sys_source:
-  nm: 普通账户
-  fc: 信用账户
+# Present in dim_public but not referenced by current 8 tables
+unused_code_types:
+  "300": 证件类型
+  "400": 风险偏好
 
-ccy:
-  "0": 人民币
-  "1": 美元
-  "2": 港币
+static_enums:
+  sys_source:
+    nm: 普通账户
+    fc: 信用账户
+  ccy:
+    "0": 人民币
+    "1": 美元
+    "2": 港币
+  cust_type:
+    P: 个人客户

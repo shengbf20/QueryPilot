@@ -5,9 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import yaml
-
-from querypilot.config import get_settings
 from querypilot.metadata_engine.loader import DB_COLUMNS, EXPECTED_TABLES, load_all_tables
 from querypilot.metadata_engine.models import TableMeta
 
@@ -65,25 +62,9 @@ def validate_table(meta: TableMeta, result: ValidationResult) -> None:
 
 
 def validate_join_graph(tables: dict[str, TableMeta], result: ValidationResult) -> None:
-    join_graph_path = get_settings().metadata_dir / "join_graph.yaml"
-    if not join_graph_path.exists():
-        result.add_warning("join_graph.yaml not found")
-        return
+    from querypilot.metadata_engine.join_graph_validator import validate_join_graph as _validate
 
-    with join_graph_path.open(encoding="utf-8") as f:
-        graph = yaml.safe_load(f)
-
-    graph_tables = set(graph.get("tables", {}))
-    for name in EXPECTED_TABLES:
-        if name not in graph_tables:
-            result.add_warning(f"join_graph.yaml missing table entry: {name}")
-        if name not in tables:
-            result.add_error(f"metadata missing table: {name}")
-
-    for edge in graph.get("edges", []):
-        for key in ("from", "to"):
-            if edge.get(key) not in tables:
-                result.add_error(f"join_graph edge references unknown table: {edge.get(key)}")
+    _validate(result)
 
 
 def validate_all(tables_dir: Path | None = None) -> ValidationResult:

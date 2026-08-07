@@ -1,57 +1,223 @@
-# Join-Graph: table topology and join paths
-# NOTE: ads_cust_info_d (20260531) and fact tables have non-overlapping data_dt;
-#       cross-table joins should use pty_id, not data_dt, unless user specifies a date.
+# Join-Graph: table topology, join edges, and common multi-hop paths
+#
+# Global conventions:
+# - ads_cust_info_d.data_dt = 20260531 (customer snapshot)
+# - Fact tables use earlier trading dates; do NOT join on data_dt by default
+# - dim_public lookups MUST include filter.code_type_id
+
+join_rules:
+  - id: no_default_data_dt
+    description: 客户信息表与事实表/营业部表 data_dt 不对齐，跨表 Join 默认仅使用业务键（pty_id / org_id），不要默认加 data_dt 条件
+  - id: dim_public_lookup
+    description: 关联 dim_public 时必须加 filter.code_type_id，且 join 列必须是 ads_cust_info_d 中的编码字段
 
 tables:
   ads_cust_info_d:
     alias: 客户信息表
+    layer: ads
     primary_key: [pty_id]
+    role: 客户特征筛选入口表
+
   dws_cust_aset_d:
     alias: 客户资产表
+    layer: dws
     primary_key: [data_dt, pty_id]
+    role: 资产规模指标
+
   dwd_cust_hold_d:
     alias: 客户持仓表
+    layer: dwd
     primary_key: [data_dt, pty_id, prdt_id, sys_source, ccy]
+    role: 持仓份额与市值
+
   dwd_cust_tran_d:
     alias: 客户交易表
+    layer: dwd
     primary_key: [data_dt, pty_id, prdt_id, sys_source, ccy]
+    role: 买卖交易行为
+
   dws_cust_fin_d:
     alias: 客户资金流动表
+    layer: dws
     primary_key: [data_dt, pty_id, sys_source]
+    role: 资金流入流出
+
   dim_product:
     alias: 产品信息表
+    layer: dim
     primary_key: [prdt_id]
+    role: 产品名称与分类
+
   dim_public:
     alias: 公共维表
+    layer: dim
     primary_key: [code, code_type_id]
+    role: 编码字典（等级/状态/性别/学历/职业）
+
   dim_branch:
     alias: 营业部表
+    layer: dim
     primary_key: [data_dt, org_id]
+    role: 营业部与上级分公司
 
 edges:
-  - from: ads_cust_info_d
+  # --- 客户 ↔ 事实表（pty_id）---
+  - id: customer_to_asset
+    from: ads_cust_info_d
     to: dws_cust_aset_d
-    on: [pty_id]
-    note: 日期不对齐，不要默认加 data_dt 条件
-  - from: ads_cust_info_d
+    type: fact
+    join:
+      pty_id: pty_id
+    cardinality: "1:N"
+    rules: [no_default_data_dt]
+
+  - id: customer_to_hold
+    from: ads_cust_info_d
     to: dwd_cust_hold_d
-    on: [pty_id]
-  - from: ads_cust_info_d
+    type: fact
+    join:
+      pty_id: pty_id
+    cardinality: "1:N"
+    rules: [no_default_data_dt]
+
+  - id: customer_to_tran
+    from: ads_cust_info_d
     to: dwd_cust_tran_d
-    on: [pty_id]
-  - from: ads_cust_info_d
+    type: fact
+    join:
+      pty_id: pty_id
+    cardinality: "1:N"
+    rules: [no_default_data_dt]
+
+  - id: customer_to_fin
+    from: ads_cust_info_d
     to: dws_cust_fin_d
-    on: [pty_id]
-  - from: ads_cust_info_d
+    type: fact
+    join:
+      pty_id: pty_id
+    cardinality: "1:N"
+    rules: [no_default_data_dt]
+
+  # --- 客户 ↔ 营业部（org_id）---
+  - id: customer_to_branch
+    from: ads_cust_info_d
     to: dim_branch
-    on: [org_id]
-  - from: dwd_cust_hold_d
+    type: dimension
+    join:
+      org_id: org_id
+    cardinality: "N:1"
+    rules: [no_default_data_dt]
+
+  # --- 持仓/交易 ↔ 产品（prdt_id）---
+  - id: hold_to_product
+    from: dwd_cust_hold_d
     to: dim_product
-    on: [prdt_id]
-  - from: dwd_cust_tran_d
+    type: dimension
+    join:
+      prdt_id: prdt_id
+    cardinality: "N:1"
+
+  - id: tran_to_product
+    from: dwd_cust_tran_d
     to: dim_product
-    on: [prdt_id]
-  - from: ads_cust_info_d
+    type: dimension
+    join:
+      prdt_id: prdt_id
+    cardinality: "N:1"
+
+  # --- 客户 ↔ dim_public（编码字典，5 条）---
+  - id: customer_gender_lookup
+    from: ads_cust_info_d
     to: dim_public
-    on: [gender_cd=code]
-    note: code_type_id = '500' for gender
+    type: lookup
+    alias: gender_lookup
+    join:
+      gender_cd: code
+    filter:
+      code_type_id: "500"
+    rules: [dim_public_lookup]
+
+  - id: customer_edu_lookup
+    from: ads_cust_info_d
+    to: dim_public
+    type: lookup
+    alias: edu_lookup
+    join:
+      edu_cd: code
+    filter:
+      code_type_id: "600"
+    rules: [dim_public_lookup]
+
+  - id: customer_prof_lookup
+    from: ads_cust_info_d
+    to: dim_public
+    type: lookup
+    alias: prof_lookup
+    join:
+      prof_cd: code
+    filter:
+      code_type_id: "700"
+    rules: [dim_public_lookup]
+
+  - id: customer_level_lookup
+    from: ads_cust_info_d
+    to: dim_public
+    type: lookup
+    alias: cust_lvl_lookup
+    join:
+      cust_lvl_cd: code
+    filter:
+      code_type_id: "100"
+    rules: [dim_public_lookup]
+
+  - id: customer_status_lookup
+    from: ads_cust_info_d
+    to: dim_public
+    type: lookup
+    alias: cust_status_lookup
+    join:
+      cust_status: code
+    filter:
+      code_type_id: "200"
+    rules: [dim_public_lookup]
+
+paths:
+  customer_with_asset:
+    description: 客户特征 + 资产指标
+    tables: [ads_cust_info_d, dws_cust_aset_d]
+    edges: [customer_to_asset]
+
+  customer_with_branch:
+    description: 客户特征 + 营业部
+    tables: [ads_cust_info_d, dim_branch]
+    edges: [customer_to_branch]
+
+  customer_with_hold:
+    description: 客户特征 + 持仓
+    tables: [ads_cust_info_d, dwd_cust_hold_d]
+    edges: [customer_to_hold]
+
+  customer_with_tran:
+    description: 客户特征 + 交易
+    tables: [ads_cust_info_d, dwd_cust_tran_d]
+    edges: [customer_to_tran]
+
+  customer_with_fin:
+    description: 客户特征 + 资金流动
+    tables: [ads_cust_info_d, dws_cust_fin_d]
+    edges: [customer_to_fin]
+
+  customer_to_product_via_hold:
+    description: 客户 → 持仓 → 产品
+    tables: [ads_cust_info_d, dwd_cust_hold_d, dim_product]
+    edges: [customer_to_hold, hold_to_product]
+
+  customer_to_product_via_tran:
+    description: 客户 → 交易 → 产品
+    tables: [ads_cust_info_d, dwd_cust_tran_d, dim_product]
+    edges: [customer_to_tran, tran_to_product]
+
+  customer_asset_and_product_via_hold:
+    description: 客户 + 资产 + 持仓 + 产品（营销圈选常见路径）
+    tables: [ads_cust_info_d, dws_cust_aset_d, dwd_cust_hold_d, dim_product]
+    edges: [customer_to_asset, customer_to_hold, hold_to_product]
