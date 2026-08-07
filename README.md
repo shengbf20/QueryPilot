@@ -234,3 +234,9 @@ source/
 | `frontend/`        | 阶段五      | 可视化原型                      |
 
 
+### 与各阶段的对应关系
+
+- 阶段一：metadata/ + metadata_engine/
+- 阶段二：agent/ + safety/
+- 阶段三：eval/
+- 阶段五：frontend/ & api/
