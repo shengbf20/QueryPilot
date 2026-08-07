@@ -4,4 +4,6 @@ __pycache__/
 .venv/
 venv/
 *.db
+*.duckdb
+db/
 .DS_Store
