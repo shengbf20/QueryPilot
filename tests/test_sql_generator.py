@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from types import SimpleNamespace
 from typing import Any
 
@@ -20,6 +21,24 @@ from querypilot.agent.prompt import SYSTEM_PROMPT
 from querypilot.config import get_settings
 from querypilot.db import explain
 from querypilot.metadata_engine import SchemaPruner, load_metadata
+
+# JOIN ... ON <cond> — stop at next clause keyword (allows WHERE data_dt filters).
+_JOIN_ON_RE = re.compile(
+    r"\bJOIN\b.+?\bON\b\s+(.+?)(?=\b(?:INNER|LEFT|RIGHT|FULL|CROSS|JOIN|WHERE|GROUP|ORDER|LIMIT|HAVING|UNION)\b|$)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _join_on_fragments(sql: str) -> list[str]:
+    return [m.group(1).strip() for m in _JOIN_ON_RE.finditer(sql)]
+
+
+def _assert_joins_without_data_dt(sql: str) -> None:
+    fragments = _join_on_fragments(sql)
+    for on_expr in fragments:
+        assert "data_dt" not in on_expr.lower(), (
+            f"data_dt must not appear in JOIN ON conditions:\n{on_expr}\nSQL:\n{sql}"
+        )
 
 
 def _api_key_ready() -> bool:
@@ -48,12 +67,31 @@ def pruner(metadata):
 # ---------------------------------------------------------------------------
 
 
+def test_system_prompt_hard_rules():
+    """Lock SYSTEM_PROMPT business rules (not only identity with build_prompt)."""
+    assert "pty_id" in SYSTEM_PROMPT
+    assert "org_id" in SYSTEM_PROMPT
+    assert "data_dt" in SYSTEM_PROMPT
+    assert "不要把不同表的 data_dt 作为 Join 条件" in SYSTEM_PROMPT
+    assert "code_type_id" in SYSTEM_PROMPT
+    assert "CTE" in SYSTEM_PROMPT or "WITH" in SYSTEM_PROMPT
+    assert "JSON" in SYSTEM_PROMPT or "json" in SYSTEM_PROMPT
+
+
 def test_load_few_shots_has_examples():
     shots = load_few_shots()
     assert len(shots) >= 3
     assert all(s.question and s.sql for s in shots)
     female = next(s for s in shots if "女性" in s.question)
     assert "5000003" in female.sql
+
+
+def test_few_shot_asset_example_joins_on_pty_id_not_data_dt():
+    shots = load_few_shots()
+    asset = next(s for s in shots if "总资产" in s.question)
+    assert "pty_id" in asset.sql
+    assert "JOIN" in asset.sql.upper()
+    _assert_joins_without_data_dt(asset.sql)
 
 
 def test_build_prompt_contains_schema_rules_and_shots(metadata, pruner):
@@ -73,6 +111,11 @@ def test_build_prompt_contains_schema_rules_and_shots(metadata, pruner):
     assert "ads_cust_info_d" in prompt.tables or "dws_cust_aset_d" in prompt.tables
     assert "CTE" in prompt.system or "WITH" in prompt.system
     assert "json" in prompt.system.lower() or "JSON" in prompt.system
+
+    assert "建议 Join" in prompt.user
+    join_section = prompt.user.split("建议 Join:")[-1].split("参考示例")[0]
+    assert "pty_id" in join_section
+    assert "data_dt" not in join_section
 
     messages = prompt.as_messages()
     assert messages[0]["role"] == "system"
@@ -101,11 +144,10 @@ def test_build_prompt_empty_question_raises(metadata, pruner):
 def test_build_prompt_includes_enum_values_when_available(metadata, pruner):
     question = "女性客户数量"
     pruned = pruner.prune(question)
+    assert "ads_cust_info_d" in pruned.tables
     prompt = build_prompt(question, pruned, metadata, few_shots=[], include_values=True)
-    # gender enum codes should appear when customer table is in pruned schema
-    if "ads_cust_info_d" in pruned.tables:
-        assert "gender_cd" in prompt.user
-        assert "5000003" in prompt.user or "女" in prompt.user
+    assert "gender_cd" in prompt.user
+    assert "5000003" in prompt.user
 
 
 # ---------------------------------------------------------------------------
@@ -219,9 +261,11 @@ def test_live_generate_sql_simple_customer_count(metadata):
     upper = result.sql.upper()
     assert "SELECT" in upper or upper.lstrip().startswith("WITH")
     assert "ads_cust_info_d" in result.sql
-    assert "cust_age" in result.sql.lower() or "年龄" in result.rationale
-    # Prefer correct female code when model follows schema enums
+    assert "cust_age" in result.sql.lower()
+    assert "gender_cd" in result.sql.lower()
+    assert "5000003" in result.sql
     assert "INSERT" not in upper and "DROP" not in upper and "DELETE" not in upper
+    _assert_joins_without_data_dt(result.sql)
 
     plan = explain(result.sql)
     assert plan.ok, f"EXPLAIN failed: {plan.error}\nSQL:\n{result.sql}"
@@ -239,8 +283,9 @@ def test_live_generate_sql_asset_join_uses_cte_or_join(metadata):
     assert "ads_cust_info_d" in result.sql or "pty_id" in result.sql
     upper = result.sql.upper()
     assert "SELECT" in upper
-    # Multi-table aggregation should lean on WITH or JOIN
-    assert "JOIN" in upper or upper.lstrip().startswith("WITH") or result.uses_cte
+    # Multi-table filter + aggregation should use CTE (Step 5 / SYSTEM rule 7)
+    assert upper.lstrip().startswith("WITH") or result.uses_cte
+    _assert_joins_without_data_dt(result.sql)
 
     plan = explain(result.sql)
     assert plan.ok, f"EXPLAIN failed: {plan.error}\nSQL:\n{result.sql}"
@@ -255,5 +300,26 @@ def test_live_generate_sql_trade_product(metadata):
         max_tokens=800,
     )
     assert "dwd_cust_tran_d" in result.sql or "buy_amt" in result.sql
+    _assert_joins_without_data_dt(result.sql)
     plan = explain(result.sql)
     assert plan.ok, f"EXPLAIN failed: {plan.error}\nSQL:\n{result.sql}"
+
+
+def test_assert_joins_without_data_dt_helper():
+    """Guard the static checker itself (allows WHERE data_dt, blocks JOIN ON data_dt)."""
+    ok_sql = """
+    WITH latest AS (
+      SELECT pty_id, nm_tot_aset FROM dws_cust_aset_d
+      WHERE data_dt = (SELECT MAX(data_dt) FROM dws_cust_aset_d)
+    )
+    SELECT COUNT(*) FROM ads_cust_info_d c
+    JOIN latest a ON c.pty_id = a.pty_id
+    """
+    _assert_joins_without_data_dt(ok_sql)
+
+    bad_sql = """
+    SELECT COUNT(*) FROM ads_cust_info_d c
+    JOIN dws_cust_aset_d a ON c.pty_id = a.pty_id AND c.data_dt = a.data_dt
+    """
+    with pytest.raises(AssertionError, match="data_dt"):
+        _assert_joins_without_data_dt(bad_sql)

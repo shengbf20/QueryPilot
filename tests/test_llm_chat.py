@@ -48,6 +48,11 @@ def test_parse_json_content_rejects_array():
         parse_json_content("[1, 2]")
 
 
+def test_parse_json_content_empty():
+    with pytest.raises(JsonParseError, match="Empty"):
+        parse_json_content("")
+
+
 # ---------------------------------------------------------------------------
 # Live API tests (same code path as runtime)
 # ---------------------------------------------------------------------------

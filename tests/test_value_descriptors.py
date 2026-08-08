@@ -92,6 +92,20 @@ def test_db_codes_loaded(sample_registry, sample_db):
     assert len(sample_registry.get_codes_for_column("ads_cust_info_d", "gender_cd")) == 2
 
 
+def test_resolve_requires_matching_code_type_id(sample_registry):
+    """Codes are keyed by code_type_id; wrong type must not resolve via gender_cd."""
+    # Same code string only under edu type (600), not gender (500)
+    sample_registry.codes_by_type = {
+        "600": {"5000002": "学士"},
+        "500": {"5000003": "女"},
+    }
+    assert sample_registry.resolve("ads_cust_info_d", "gender_cd", "5000002") is None
+    assert sample_registry.resolve("ads_cust_info_d", "edu_cd", "5000002") == "学士"
+    assert sample_registry.resolve("ads_cust_info_d", "gender_cd", "5000003") == "女"
+    # edu must not pick up a gender-only code
+    assert sample_registry.resolve("ads_cust_info_d", "edu_cd", "5000003") is None
+
+
 def test_format_for_prompt(sample_registry, sample_db):
     load_codes_from_db(sample_registry, sample_db)
     text = sample_registry.format_for_prompt("ads_cust_info_d", "gender_cd")
@@ -108,6 +122,20 @@ def test_db_validation_passes(sample_registry, sample_db):
     load_codes_from_db(sample_registry, sample_db)
     result = validate_value_descriptors_against_db(sample_registry, sample_db)
     assert result.ok, result.errors
+
+
+def test_db_validation_fails_on_orphan_gender_cd(sample_registry, sample_db):
+    """Customer codes missing from dim_public (for that code_type_id) must fail."""
+    sample_db.execute(
+        "INSERT INTO ads_cust_info_d VALUES (?, ?, ?, ?, ?)",
+        ["9999999", "6000004", "1000003", "2000001", "7000020"],
+    )
+    load_codes_from_db(sample_registry, sample_db)
+    result = validate_value_descriptors_against_db(sample_registry, sample_db)
+    assert not result.ok
+    assert any("gender_cd" in e and "not found in dim_public" in e for e in result.errors), (
+        result.errors
+    )
 
 
 @pytest.mark.skipif(

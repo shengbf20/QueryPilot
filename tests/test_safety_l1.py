@@ -28,12 +28,30 @@ def metadata():
         "CREATE TABLE evil AS SELECT 1",
         "TRUNCATE TABLE ads_cust_info_d",
         "COPY ads_cust_info_d TO 'out.csv'",
+        "ALTER TABLE ads_cust_info_d ADD COLUMN x INTEGER",
+        "GRANT SELECT ON ads_cust_info_d TO someone",
     ],
 )
 def test_blocks_dangerous_ops(metadata, sql):
     result = guard_sql(sql, metadata=metadata)
     assert not result.ok
     assert any(v.code == "dangerous_op" for v in result.violations)
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "ATTACH 'evil.db' AS evil",
+        "ATTACH DATABASE 'evil.db' AS evil",
+        "DETACH evil",
+    ],
+)
+def test_blocks_attach_detach(metadata, sql):
+    """ATTACH/DETACH must not pass; may surface as dangerous_op or parse_error."""
+    result = guard_sql(sql, metadata=metadata)
+    assert not result.ok
+    codes = {v.code for v in result.violations}
+    assert codes & {"dangerous_op", "parse_error"}, codes
 
 
 def test_allows_simple_select(metadata):
@@ -72,7 +90,7 @@ def test_multiple_statements_blocked(metadata):
         metadata=metadata,
     )
     assert not result.ok
-    assert any(v.code in {"multiple_statements", "dangerous_op", "parse_error"} for v in result.violations)
+    assert any(v.code == "multiple_statements" for v in result.violations)
 
 
 def test_parse_error(metadata):
@@ -90,6 +108,19 @@ def test_blocks_unauthorized_table(metadata):
     result = guard_sql("SELECT * FROM secret_customers", metadata=metadata)
     assert not result.ok
     assert any(v.code == "unauthorized_table" for v in result.violations)
+
+
+def test_blocks_unauthorized_table_in_subquery(metadata):
+    sql = """
+    SELECT pty_id FROM ads_cust_info_d
+    WHERE EXISTS (SELECT 1 FROM secret_customers s WHERE s.pty_id = ads_cust_info_d.pty_id)
+    """
+    result = guard_sql(sql, metadata=metadata)
+    assert not result.ok
+    assert any(
+        v.code == "unauthorized_table" and "secret_customers" in v.message
+        for v in result.violations
+    )
 
 
 def test_allowed_tables_subset_blocks_others(metadata):
@@ -147,6 +178,19 @@ def test_unknown_column_without_close_match_blocked(metadata):
     )
     assert not result.ok
     assert any(v.code == "unknown_column" for v in result.violations)
+
+
+def test_wrong_table_column_not_fuzzy_fixed(metadata):
+    """Asset column on customer table is hallucination — block, do not invent a fix."""
+    result = guard_sql(
+        "SELECT nm_tot_aset FROM ads_cust_info_d",
+        metadata=metadata,
+        allowed_tables={"ads_cust_info_d"},
+    )
+    assert not result.ok
+    assert any(v.code == "unknown_column" for v in result.violations)
+    assert result.fixes == []
+    assert "nm_tot_aset" in result.sql  # failure keeps original SQL
 
 
 def test_auto_fix_can_be_disabled(metadata):
@@ -218,3 +262,17 @@ def test_live_generated_sql_passes_l1(metadata):
     allowed = set(gen.pruned.tables) if gen.pruned else None
     result = guard_sql(gen.sql, metadata=metadata, allowed_tables=allowed)
     assert result.ok, (result.violations, gen.sql)
+    assert result.violations == []
+    upper = f" {result.sql.upper()} "
+    for banned in (
+        "DELETE ",
+        "DROP ",
+        "UPDATE ",
+        "INSERT ",
+        "TRUNCATE ",
+        "CREATE ",
+        "COPY ",
+        "ALTER ",
+        "GRANT ",
+    ):
+        assert banned not in upper, f"readonly check hit {banned!r} in:\n{result.sql}"

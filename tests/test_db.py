@@ -82,6 +82,20 @@ def test_get_connection_and_list_tables():
     not get_settings().db_path.exists(),
     reason="competition.duckdb not imported yet",
 )
+def test_default_connection_is_read_only():
+    """get_connection defaults to read_only=True; writes must fail."""
+    con = get_connection()
+    try:
+        with pytest.raises(duckdb.Error):
+            con.execute("CREATE TABLE __qp_read_only_probe (id INTEGER)")
+    finally:
+        con.close()
+
+
+@pytest.mark.skipif(
+    not get_settings().db_path.exists(),
+    reason="competition.duckdb not imported yet",
+)
 def test_project_db_explain_and_execute():
     con = get_connection(read_only=True)
     try:

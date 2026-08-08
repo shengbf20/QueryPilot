@@ -22,15 +22,19 @@ def test_prune_customer_attributes(pruner):
     assert "ads_cust_info_d" in result.seed_tables
     assert "ads_cust_info_d" in result.tables
     assert "dim_public" not in result.seed_tables
+    assert "dim_public" not in result.tables
+    assert "性别" in result.search_text
 
 
 def test_prune_asset_query_expands_join(pruner):
     result = pruner.prune("总资产超过100万的客户有多少")
     assert "dws_cust_aset_d" in result.seed_tables
-    assert "ads_cust_info_d" in result.tables or "ads_cust_info_d" in result.seed_tables
-    # asset table should be present after seed or expand
+    assert "ads_cust_info_d" in result.seed_tables
     assert "dws_cust_aset_d" in result.tables
-    assert any("pty_id" in c for c in result.join_plan.join_clauses) or len(result.seed_tables) >= 1
+    assert "ads_cust_info_d" in result.tables
+    assert result.join_plan.join_clauses
+    assert all("pty_id" in c for c in result.join_plan.join_clauses)
+    assert all("data_dt" not in c for c in result.join_plan.join_clauses)
 
 
 def test_prune_trade_and_product(pruner):
@@ -71,7 +75,12 @@ def test_format_for_prompt_contains_schema_and_rules(pruner, metadata):
     assert "相关表结构" in text
     assert "dws_cust_aset_d" in text or "客户资产" in text
     assert "业务约定" in text
-    assert "data_dt" in text  # join rule / note mentions date alignment
+    assert "data_dt" in text  # notes mention date misalignment
+    assert "建议 Join" in text
+    # Join hints must use business keys only (notes may still mention data_dt)
+    join_section = text.split("建议 Join:")[-1]
+    assert "pty_id" in join_section
+    assert "data_dt" not in join_section
 
 
 def test_empty_question_raises(pruner):
