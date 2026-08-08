@@ -127,6 +127,7 @@ def guard_sql(
 
     cte_names = {cte.alias_or_name for cte in tree.find_all(exp.CTE)}
     physical_tables, alias_map = _collect_tables(tree, cte_names)
+    select_aliases = _collect_select_aliases(tree)
 
     for table in sorted(physical_tables):
         if table not in allow:
@@ -141,10 +142,23 @@ def guard_sql(
         scope_tables = physical_tables & allow if physical_tables else allow
         if auto_fix_columns:
             fixes.extend(
-                _fix_columns(tree, alias_map, cte_names, catalog, scope_tables, min_similarity)
+                _fix_columns(
+                    tree,
+                    alias_map,
+                    cte_names,
+                    catalog,
+                    scope_tables,
+                    min_similarity,
+                    select_aliases,
+                )
             )
         for _col, _table_hint, message in _unknown_columns(
-            tree, alias_map, cte_names, catalog, scope_tables
+            tree,
+            alias_map,
+            cte_names,
+            catalog,
+            scope_tables,
+            select_aliases,
         ):
             violations.append(GuardViolation("unknown_column", message))
 
@@ -193,6 +207,18 @@ def _collect_tables(
     return physical, alias_map
 
 
+def _collect_select_aliases(tree: exp.Expression) -> set[str]:
+    """Names introduced by SELECT ... AS alias (valid in ORDER BY / outer refs)."""
+    return {alias.alias for alias in tree.find_all(exp.Alias) if alias.alias}
+
+
+def _is_select_alias_ref(column: exp.Column, select_aliases: set[str]) -> bool:
+    """Unqualified reference to a projection alias (e.g. ORDER BY cust_cnt)."""
+    if column.table:
+        return False
+    return bool(column.name) and column.name in select_aliases
+
+
 def _candidate_columns(
     catalog: dict[str, set[str]],
     scope_tables: set[str],
@@ -213,11 +239,14 @@ def _fix_columns(
     catalog: dict[str, set[str]],
     scope_tables: set[str],
     min_similarity: float,
+    select_aliases: set[str],
 ) -> list[ColumnFix]:
     fixes: list[ColumnFix] = []
     for column in tree.find_all(exp.Column):
         col_name = column.name
         if not col_name or col_name == "*":
+            continue
+        if _is_select_alias_ref(column, select_aliases):
             continue
 
         table_ref = column.table or None
@@ -247,12 +276,15 @@ def _unknown_columns(
     cte_names: set[str],
     catalog: dict[str, set[str]],
     scope_tables: set[str],
+    select_aliases: set[str],
 ) -> list[tuple[str, str | None, str]]:
     """Return remaining unknown columns after fuzzy fixes."""
     unknown: list[tuple[str, str | None, str]] = []
     for column in tree.find_all(exp.Column):
         col_name = column.name
         if not col_name or col_name == "*":
+            continue
+        if _is_select_alias_ref(column, select_aliases):
             continue
         table_ref = column.table or None
         resolved = alias_map.get(table_ref, table_ref) if table_ref else None

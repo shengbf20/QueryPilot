@@ -240,3 +240,15 @@ source/
 - 阶段二：agent/ + safety/
 - 阶段三：eval/
 - 阶段五：frontend/ & api/
+
+### 阶段二快速试用
+
+```powershell
+# 端到端问数（需 .env 中 DEEPSEEK_API_KEY，以及已导入的 db/competition.duckdb）
+querypilot ask "有多少年龄大于30岁的女性客户？"
+
+# 或：python -m querypilot.cli ask "总资产超过100万的客户有多少人？"
+
+# 批量 Demo（5 条样例问句）
+python scripts/demo_pipeline.py
+```

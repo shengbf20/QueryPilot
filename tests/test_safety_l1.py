@@ -237,6 +237,40 @@ def test_cte_alias_not_treated_as_unauthorized_table(metadata):
     assert not any(v.code == "unauthorized_table" for v in result.violations)
 
 
+def test_order_by_select_alias_allowed(metadata):
+    """Regression: ORDER BY projection alias must not be flagged as unknown_column."""
+    sql = """
+    SELECT b.org_name, COUNT(c.pty_id) AS cust_cnt
+    FROM dim_branch AS b
+    LEFT JOIN ads_cust_info_d AS c ON b.org_id = c.org_id
+    GROUP BY b.org_name
+    ORDER BY cust_cnt DESC
+    """
+    result = guard_sql(
+        sql,
+        metadata=metadata,
+        allowed_tables={"dim_branch", "ads_cust_info_d"},
+    )
+    assert result.ok, result.violations
+    assert not any(v.code == "unknown_column" for v in result.violations)
+    assert "cust_cnt" in result.sql.lower()
+
+
+def test_order_by_unknown_non_alias_still_blocked(metadata):
+    """ORDER BY a name that is not a SELECT alias remains unknown_column."""
+    sql = """
+    SELECT org_name
+    FROM dim_branch
+    ORDER BY not_a_real_sort_key_xyz DESC
+    """
+    result = guard_sql(sql, metadata=metadata, allowed_tables={"dim_branch"})
+    assert not result.ok
+    assert any(
+        v.code == "unknown_column" and "not_a_real_sort_key_xyz" in v.message
+        for v in result.violations
+    )
+
+
 # ---------------------------------------------------------------------------
 # Live: generated SQL should pass L1
 # ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 
 > 记录范围：Schema 剪枝、单次 LLM SQL 生成、L1/L2 安全围栏、结果探针与端到端编排。  
 > 记录时间：2026-08-07（规划落档）  
-> 状态：🚧 进行中（步骤 1–6 已完成）  
+> 状态：✅ 阶段二完成（步骤 1–7）  
 > 前置依赖：阶段一已完成（`load_metadata()` / Join-Graph / 编码字典）
 
 ---
@@ -78,7 +78,7 @@ querypilot/
 | 4 L1 AST | ✅ | `safety/l1_ast.py`：只读拦截 / 表白名单 / 列名模糊修正；23 测（含 live 生成→L1） |
 | 5 L2 + 1-Shot | ✅ | `safety/l2_explain.py`：EXPLAIN → 仅 1 次纠错 → 再 L1/EXPLAIN；失败降级；11 测 |
 | 6 Pipeline + 探针 | ✅ | `agent/pipeline.py` `ask()` + `safety/result_probe.py`；9 测（含 live） |
-| 7 CLI / Demo / 测试 | ⏳ | |
+| 7 CLI / Demo / 测试 | ✅ | `cli.py ask` + `demo_pipeline.py` + `test_cli.py`；阶段二相关 112 测通过 |
 
 ### 步骤 1 明细（2026-08-07）
 
@@ -133,4 +133,20 @@ querypilot/
 - `querypilot/agent/pipeline.py`：`ask()` 串联 prune → generate → L1 → L2(+1-Shot) → execute → probe
 - `querypilot/agent/models.py`：新增 `PipelineResult`
 - 测试：`tests/test_pipeline.py`（9）— 探针单测、假 client 成功/L1 拦截/空结果探针、live `ask`
+
+### 步骤 7 明细（2026-08-08）
+
+- `querypilot/cli.py`：`ask` 子命令 + `format_pipeline_result`（SQL / 表 / 结果 / 探针 / 降级）
+- `scripts/demo_pipeline.py`：5 条营销样例端到端演示
+- `tests/test_cli.py`：参数解析、输出格式、mock `ask`、live CLI 冒烟
+- `README.md`：补充阶段二快速试用命令
+- 回归：阶段二相关测试合计 **112 passed**
+
+**阶段二收口用法**
+
+```powershell
+querypilot ask "有多少年龄大于30岁的女性客户？"
+python scripts/demo_pipeline.py
+pytest tests/test_cli.py tests/test_pipeline.py tests/test_safety_l1.py tests/test_safety_l2.py tests/test_sql_generator.py tests/test_schema_pruner.py tests/test_db.py tests/test_llm_chat.py -q
+```
 
