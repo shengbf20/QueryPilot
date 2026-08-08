@@ -8,6 +8,8 @@ venv/
 db/
 .pytest_cache/
 .ruff_cache/
+logs/eval_reports/
+artifacts/eval/
 *.egg-info/
 dist/
 build/
