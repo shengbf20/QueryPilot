@@ -89,18 +89,20 @@ querypilot/
 - 问题：Pipeline 与 L2 需要稳定的「跑 SQL / 试跑 EXPLAIN」能力，以及统一的 LLM 调用与 JSON 解析，避免各模块各自接 API。
 - 交付：只读 DuckDB 连接与 `execute`/`explain`；DeepSeek `chat` / `generate` / `generate_json`（含 fence 解析）。
 
-**涉及文件**
+**涉及文件**（🆕 新建职责 / ✏️ 已有文件增补）
 
-- `querypilot/db/connection.py`
-- `querypilot/llm/chat.py`、`querypilot/llm/client.py`
-- `tests/test_db.py`、`tests/test_llm_chat.py`
+| 文件 | 类型 | 说明 |
+|------|------|------|
+| `querypilot/db/connection.py` | ✏️ 已有 | 原仅有 `get_connection`；补 `execute`/`explain`、结果类型、`connection()`，默认只读 |
+| `querypilot/llm/chat.py` | 🆕 新建 | 统一 DeepSeek 调用：`chat` / `generate` / `generate_json` + JSON fence 解析 |
+| `querypilot/llm/client.py` | ✏️ 已有 | 保持 `get_llm_client`；供 `chat.py` 复用 |
+| `tests/test_db.py` | 🆕 新建 | DuckDB 执行/EXPLAIN 单测与项目库冒烟 |
+| `tests/test_llm_chat.py` | 🆕 新建 | JSON 解析单测 + 真实 DeepSeek（无 Key 则 skip） |
 
 **修改重点与明细**
 
-- 连接默认 `read_only=True`；提供 `QueryResult` / `ExplainResult`、`connection()` 上下文。
-- `execute` 支持 `max_rows`；`explain` 规范化 SQL、兼容已带 `EXPLAIN` 前缀、空 SQL 报错。
-- `generate_json` 使用 `response_format=json_object`，`parse_json_content` 容忍 markdown fence、拒绝非 object。
-- 测试：内存库 execute/explain；项目库冒烟；JSON 解析单测 + 真实 DeepSeek（无 Key 则 skip）。
+- `execute` 支持 `max_rows`；`explain` 规范化 SQL、兼容已带 `EXPLAIN` 前缀。
+- `generate_json` 使用 `json_object`；`parse_json_content` 容忍 fence、拒绝非 object。
 
 ---
 
@@ -111,19 +113,20 @@ querypilot/
 - 问题：全量元数据进 Prompt 过长且易干扰；多表查询需自动补中间表，且遵守「不默认 data_dt Join」「dim_public 不默认进 seed」。
 - 交付：`SchemaPruner.prune()` → `PrunedSchema`（seed/tables/join_plan/notes + `format_for_prompt`）。
 
-**涉及文件**
+**涉及文件**（🆕 新建职责 / ✏️ 已有文件增补）
 
-- `querypilot/metadata_engine/schema_pruner.py`
-- `querypilot/metadata_engine/bundle.py`（`prune_schema` 快捷入口）
-- `tests/test_schema_pruner.py`
-- `scripts/demo_schema_pruner.py`
+| 文件 | 类型 | 说明 |
+|------|------|------|
+| `querypilot/metadata_engine/schema_pruner.py` | 🆕 新建 | 问句→相关表检索、客户中枢补全、Join-Graph 扩展、Prompt 片段格式化 |
+| `querypilot/metadata_engine/bundle.py` | ✏️ 已有 | 增加 `MetadataBundle.prune_schema()` 快捷入口 |
+| `querypilot/metadata_engine/__init__.py` | ✏️ 已有 | 导出 `SchemaPruner` / `PrunedSchema` / `prune_schema` |
+| `tests/test_schema_pruner.py` | 🆕 新建 | 剪枝命中、中枢补全、Join 约定等单测 |
+| `scripts/demo_schema_pruner.py` | 🆕 新建 | 样例问句演示剪枝结果 |
 
 **修改重点与明细**
 
-- 表/字段别名与描述加权检索；营销用语扩展（如「女性」→性别、「买过」→交易）。
-- 事实表 +「客户」线索时补 `ads_cust_info_d`；`dim_public` 默认不进 seed（枚举走 Value Descriptor）。
-- Join-Graph `expand_tables` 补全中间表；Prompt 输出含业务约定与建议 Join（Join 子句不含默认 `data_dt`）。
-- 测试：各主题命中、客户中枢、Join 键约定、空问句/fallback、bundle 入口。
+- 别名/描述加权检索；营销用语扩展；事实表+「客户」补 `ads_cust_info_d`；`dim_public` 默认不进 seed。
+- `expand_tables` 补中间表；`format_for_prompt` 含约定与建议 Join（不含默认 `data_dt`）。
 
 ---
 
@@ -134,20 +137,22 @@ querypilot/
 - 问题：多轮 Tool 循环耗时长；需单次 LLM 在剪枝 Schema + 硬规则下生成可解析 SQL。
 - 交付：`build_prompt` + `generate_sql` / `parse_sql_payload`；Few-Shot YAML；结构化 JSON（sql / rationale / uses_cte）。
 
-**涉及文件**
+**涉及文件**（🆕 新建职责 / ✏️ 已有文件增补）
 
-- `querypilot/agent/prompt.py`、`sql_generator.py`、`models.py`
-- `metadata/few_shots/examples.yaml`
-- `tests/test_sql_generator.py`
-- `scripts/demo_sql_generator.py`
+| 文件 | 类型 | 说明 |
+|------|------|------|
+| `querypilot/agent/models.py` | 🆕 新建 | Agent 数据结构：`FewShotExample` / `PromptBundle` / `SqlGenerationResult` |
+| `querypilot/agent/prompt.py` | 🆕 新建 | `SYSTEM_PROMPT`、`load_few_shots`、`build_prompt` 组装 |
+| `querypilot/agent/sql_generator.py` | 🆕 新建 | 单次 LLM 生成并解析结构化 SQL |
+| `querypilot/agent/__init__.py` | ✏️ 已有 | 由占位说明改为导出 prompt/sql_generator API |
+| `metadata/few_shots/examples.yaml` | ✏️ 已有 | 原为空壳；填入 3 条营销 Few-Shot（含女性码 `5000003`） |
+| `tests/test_sql_generator.py` | 🆕 新建 | Prompt/解析/假 client + live 生成与 EXPLAIN |
+| `scripts/demo_sql_generator.py` | 🆕 新建 | 样例问句演示 SQL 生成 |
 
 **修改重点与明细**
 
-- `SYSTEM_PROMPT` 硬编码：只读、仅用给定表列、跨表默认 `pty_id`/`org_id`、禁止默认 `data_dt` Join、`dim_public` 双键、复杂逻辑强制 CTE、JSON 输出。
-- `build_prompt` 组装：用户问题 + 剪枝 Schema/约定/建议 Join + Few-Shot + JSON 示例。
-- `generate_sql`：剪枝（可注入）→ Prompt → `generate_json` → `parse_sql_payload`（含 SQL fence、WITH 检测）。
-- Few-Shot 3 条（含女性码 `5000003`、资产 CTE+pty_id Join）。
-- 测试：Prompt/解析/假 client；live 生成 + EXPLAIN；硬约定与 Join 静态检查。
+- 硬规则：只读、给定表列、跨表默认 `pty_id`/`org_id`、禁止默认 `data_dt` Join、复杂逻辑强制 CTE、JSON 输出。
+- 链路：剪枝 → Prompt → `generate_json` → `parse_sql_payload`（含 SQL fence、WITH 检测）。
 
 ---
 
@@ -158,19 +163,19 @@ querypilot/
 - 问题：LLM 可能生成写操作、越权表、拼错列名；需在进库前确定性拦截/轻量修正。
 - 交付：`guard_sql()` → `L1GuardResult`（ok / violations / fixes / 改写后 SQL）。
 
-**涉及文件**
+**涉及文件**（🆕 新建职责 / ✏️ 已有文件增补）
 
-- `querypilot/safety/l1_ast.py`、`models.py`
-- `querypilot/safety/__init__.py`
-- `querypilot/agent/__init__.py`（`ask` 惰性导入，避免与 safety 循环依赖）
-- `tests/test_safety_l1.py`
+| 文件 | 类型 | 说明 |
+|------|------|------|
+| `querypilot/safety/models.py` | 🆕 新建 | 围栏结果类型：`GuardViolation` / `ColumnFix` / `L1GuardResult` |
+| `querypilot/safety/l1_ast.py` | 🆕 新建 | sqlglot L1：只读拦截、表白名单、列名模糊修正 |
+| `querypilot/safety/__init__.py` | ✏️ 已有 | 由包说明改为导出 `guard_sql` 等 API |
+| `tests/test_safety_l1.py` | 🆕 新建 | 危险语句/越权表/模糊修正/CTE/别名 ORDER BY/live 回归 |
 
 **修改重点与明细**
 
-- sqlglot（DuckDB）：拦截写操作/多语句；表白名单（支持 pruned `allowed_tables`）；CTE 名不当物理表。
-- 列名 `difflib` 模糊修正（可关闭）；无近邻则 `unknown_column` 阻断。
-- **收口修复**：识别 `SELECT ... AS` 投影别名，允许 `ORDER BY cust_cnt` 等合法引用（避免营业部计数类误杀）。
-- 测试：危险语句、ATTACH/子查询越权、错表列、别名 ORDER BY 回归、live `generate_sql`→L1。
+- 拦截写操作与多语句；支持 pruned `allowed_tables`；CTE 名不当物理表。
+- 列名 `difflib` 模糊修正；识别 `SELECT ... AS` 投影别名，避免合法 `ORDER BY` 误杀。
 
 ---
 
@@ -181,17 +186,18 @@ querypilot/
 - 问题：静态通过仍可能有绑定/函数等 DB 级错误；需预执行校验，且禁止多轮死循环。
 - 交付：`validate_with_l2()` — EXPLAIN 失败则 **仅 1 次** LLM 纠错 → 再 L1 → 再 EXPLAIN；仍失败则 `degraded=True`。
 
-**涉及文件**
+**涉及文件**（🆕 新建职责 / ✏️ 已有文件增补）
 
-- `querypilot/safety/l2_explain.py`
-- `querypilot/safety/models.py`（`L2GuardResult`）
-- `tests/test_safety_l2.py`
+| 文件 | 类型 | 说明 |
+|------|------|------|
+| `querypilot/safety/l2_explain.py` | 🆕 新建 | EXPLAIN、纠错 Prompt、`correct_sql_once`、`validate_with_l2` |
+| `querypilot/safety/models.py` | ✏️ 已有 | 新增 `L2GuardResult`（ok/corrected/degraded/attempts 等） |
+| `querypilot/safety/__init__.py` | ✏️ 已有 | 导出 L2 相关 API |
+| `tests/test_safety_l2.py` | 🆕 新建 | EXPLAIN 成败、假 client 纠错路径、live 好/坏 SQL |
 
 **修改重点与明细**
 
-- `run_explain` / `build_correction_prompt` / `correct_sql_once`；`CORRECTION_SYSTEM` 强调「只修正一次」。
-- 纠错后必须再过 L1；L1 拒绝时退回 `original_sql`；LLM 异常亦降级。
-- 测试：直通、关纠错降级、假 client 成功/仍失败/L1 拒/抛异常、`attempts`/`calls` 上限、live 好/坏 SQL。
+- 纠错后必须再过 L1；L1 拒绝时退回 `original_sql`；LLM 异常亦降级；**最多 1 次**纠错。
 
 ---
 
@@ -202,17 +208,20 @@ querypilot/
 - 问题：各模块需串成单一入口；执行成功但结果为空/异常时需给业务可理解的交互提示。
 - 交付：`ask(question)` → `PipelineResult`；`probe_result` 空结果/零计数/极端量级建议。
 
-**涉及文件**
+**涉及文件**（🆕 新建职责 / ✏️ 已有文件增补）
 
-- `querypilot/agent/pipeline.py`、`models.py`（`PipelineResult`）
-- `querypilot/safety/result_probe.py`
-- `tests/test_pipeline.py`
+| 文件 | 类型 | 说明 |
+|------|------|------|
+| `querypilot/agent/pipeline.py` | 🆕 新建 | `ask()`：prune→generate→L1→L2→execute→probe 主编排 |
+| `querypilot/agent/models.py` | ✏️ 已有 | 新增 `PipelineResult`（ok/sql/rows/probe/degraded/stage 等） |
+| `querypilot/agent/__init__.py` | ✏️ 已有 | 导出 `ask` / `PipelineResult`；`ask` 惰性导入防循环依赖 |
+| `querypilot/safety/result_probe.py` | 🆕 新建 | 执行结果合理性探针与放宽条件建议 |
+| `querypilot/safety/__init__.py` | ✏️ 已有 | 导出 `probe_result` / `ProbeResult` |
+| `tests/test_pipeline.py` | 🆕 新建 | 探针单测 + 假 client/live 端到端 `ask` |
 
 **修改重点与明细**
 
-- 链路：prune → generate → L1 → L2(+1-Shot) → execute → probe；失败带 `stage` / `degraded` / `message`。
-- 探针按问句解析年龄/性别/资产门槛，生成「是否放宽…」类建议；执行成功但探针触发时仍可 `ok=True`（带 `probe_*`）。
-- 测试：探针单测；假 client 成功 / generate 失败 / L1 拦 / L2 纠错成功与降级 / 不可能年龄探针；live `ask`。
+- 失败带 `stage` / `degraded` / `message`；探针触发时执行成功仍可 `ok=True`（带 `probe_*`）。
 
 ---
 
@@ -223,20 +232,19 @@ querypilot/
 - 问题：需要可命令行演示与批量冒烟，便于答辩与本地验收（非金标评测）。
 - 交付：`querypilot ask`；`demo_pipeline.py`；CLI/格式化单测；阶段二测试集可一键跑通。
 
-**涉及文件**
+**涉及文件**（🆕 新建职责 / ✏️ 已有文件增补）
 
-- `querypilot/cli.py`
-- `scripts/demo_pipeline.py`
-- `tests/test_cli.py`
-- `README.md`（阶段二快速试用）
+| 文件 | 类型 | 说明 |
+|------|------|------|
+| `querypilot/cli.py` | ✏️ 已有 | 原 scaffold 占位；改为 `ask` 子命令 + `format_pipeline_result` 输出 |
+| `scripts/demo_pipeline.py` | 🆕 新建 | 5 条营销样例批量跑 `ask()` 的端到端 Demo |
+| `tests/test_cli.py` | 🆕 新建 | CLI 参数解析、输出格式、mock/`live` 冒烟 |
+| `README.md` | ✏️ 已有 | 增加「阶段二快速试用」命令说明 |
 
 **修改重点与明细**
 
-- CLI：`ask` 子命令、`--max-rows` / `--max-few-shots`；`format_pipeline_result` 打印 status/stage/sql/表/行/探针/降级；失败 exit 1。
-- Demo：5 条营销样例（含 1 条故意空结果探针）；**非** `Q&A.xlsx` 金标，仅验证链路可用性。
-- 测试：解析默认值、失败/截断格式、mock 传参、live CLI 冒烟。
-- 回归（2026-08-08）：阶段二相关测试 **116 passed**  
-  `test_db` + `test_llm_chat` + `test_schema_pruner` + `test_sql_generator` + `test_safety_l1` + `test_safety_l2` + `test_pipeline` + `test_cli`。
+- CLI：`--max-rows` / `--max-few-shots`；失败 exit 1。Demo 为冒烟集，**非** `Q&A.xlsx` 金标。
+- 回归（2026-08-08）：阶段二相关测试 **116 passed**。
 
 ---
 
