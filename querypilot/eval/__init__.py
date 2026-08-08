@@ -1,5 +1,13 @@
 """Execution Match evaluation and Eval-Agent."""
 
+from querypilot.eval.baseline import (
+    TARGET_EX,
+    build_baseline_summary,
+    default_baseline_stem,
+    format_baseline_markdown,
+    load_baseline,
+    save_baseline,
+)
 from querypilot.eval.dataset import cases_from_records, default_qa_path, load_qa_cases
 from querypilot.eval.eval_agent import (
     ERROR_TYPES,
@@ -56,20 +64,25 @@ __all__ = [
     "MatchResult",
     "ReviewQueue",
     "ReviewTicket",
+    "TARGET_EX",
     "TimingInfo",
     "append_few_shot",
     "approve_and_reflux",
+    "build_baseline_summary",
     "build_review_queue",
     "cases_from_records",
     "classify_heuristic",
     "compare_results",
+    "default_baseline_stem",
     "default_qa_path",
     "default_report_dir",
     "diagnose_case",
     "diagnose_failures",
     "execution_match",
     "find_ticket",
+    "format_baseline_markdown",
     "format_review_queue",
+    "load_baseline",
     "load_eval_report",
     "load_qa_cases",
     "load_review_queue",
@@ -79,6 +92,7 @@ __all__ = [
     "route_case",
     "run_case",
     "run_eval",
+    "save_baseline",
     "save_diagnoses",
     "save_eval_report",
     "save_review_queue",
