@@ -36,3 +36,19 @@ class L1GuardResult:
     @property
     def blocking_violations(self) -> list[GuardViolation]:
         return [v for v in self.violations if v.severity == "block"]
+
+
+@dataclass
+class L2GuardResult:
+    """Outcome of L2 EXPLAIN (+ optional single 1-Shot correction)."""
+
+    ok: bool
+    sql: str
+    original_sql: str
+    explain_error: str | None = None
+    corrected: bool = False
+    correction_rationale: str = ""
+    degraded: bool = False
+    message: str = ""
+    attempts: int = 1
+    l1_after_correction: L1GuardResult | None = None

@@ -2,7 +2,7 @@
 
 > 记录范围：Schema 剪枝、单次 LLM SQL 生成、L1/L2 安全围栏、结果探针与端到端编排。  
 > 记录时间：2026-08-07（规划落档）  
-> 状态：🚧 进行中（步骤 1–4 已完成）  
+> 状态：🚧 进行中（步骤 1–5 已完成）  
 > 前置依赖：阶段一已完成（`load_metadata()` / Join-Graph / 编码字典）
 
 ---
@@ -76,7 +76,7 @@ querypilot/
 | 2 Schema Pruner | ✅ | `metadata_engine/schema_pruner.py`：别名检索 + 客户中枢补全 + Join-Graph 扩展；12 个单测 + `demo_schema_pruner.py` |
 | 3 Prompt / SQL 生成 | ✅ | `agent/prompt.py` + `sql_generator.py`；few-shots YAML；16 测（含 3 个真实 LLM + EXPLAIN） |
 | 4 L1 AST | ✅ | `safety/l1_ast.py`：只读拦截 / 表白名单 / 列名模糊修正；23 测（含 live 生成→L1） |
-| 5 L2 + 1-Shot | ⏳ | |
+| 5 L2 + 1-Shot | ✅ | `safety/l2_explain.py`：EXPLAIN → 仅 1 次纠错 → 再 L1/EXPLAIN；失败降级；11 测 |
 | 6 Pipeline + 探针 | ⏳ | |
 | 7 CLI / Demo / 测试 | ⏳ | |
 
@@ -115,4 +115,15 @@ querypilot/
   - CTE 别名不视为物理表；列名 `difflib` 模糊修正（可关闭）
   - 无法修正的未知列 → block
 - 测试：`tests/test_safety_l1.py`（23）— 危险语句、越权表、模糊修正、CTE、live `generate_sql`→L1
+
+### 步骤 5 明细（2026-08-08）
+
+- `querypilot/safety/models.py`：新增 `L2GuardResult`
+- `querypilot/safety/l2_explain.py`：
+  - `run_explain` / `build_correction_prompt` / `correct_sql_once`
+  - `validate_with_l2`：EXPLAIN 失败则 **仅 1 次** LLM 纠错 → 再过 L1 → 再 EXPLAIN；仍失败则 `degraded=True` 优雅降级（无多轮死循环）
+- 测试：`tests/test_safety_l2.py`（11）
+  - 本地：纠错 Prompt、EXPLAIN 成败、纠错关闭降级
+  - 假 client：一次纠错成功 / 纠错后仍失败 / 纠错被 L1 拦截
+  - 真实 DeepSeek：合法 SQL 直通；非法列名 1-Shot 修正或降级
 
