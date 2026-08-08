@@ -2,7 +2,7 @@
 
 > 记录范围：Schema 剪枝、单次 LLM SQL 生成、L1/L2 安全围栏、结果探针与端到端编排。  
 > 记录时间：2026-08-07（规划落档）  
-> 状态：🚧 进行中（步骤 1–5 已完成）  
+> 状态：🚧 进行中（步骤 1–6 已完成）  
 > 前置依赖：阶段一已完成（`load_metadata()` / Join-Graph / 编码字典）
 
 ---
@@ -77,7 +77,7 @@ querypilot/
 | 3 Prompt / SQL 生成 | ✅ | `agent/prompt.py` + `sql_generator.py`；few-shots YAML；16 测（含 3 个真实 LLM + EXPLAIN） |
 | 4 L1 AST | ✅ | `safety/l1_ast.py`：只读拦截 / 表白名单 / 列名模糊修正；23 测（含 live 生成→L1） |
 | 5 L2 + 1-Shot | ✅ | `safety/l2_explain.py`：EXPLAIN → 仅 1 次纠错 → 再 L1/EXPLAIN；失败降级；11 测 |
-| 6 Pipeline + 探针 | ⏳ | |
+| 6 Pipeline + 探针 | ✅ | `agent/pipeline.py` `ask()` + `safety/result_probe.py`；9 测（含 live） |
 | 7 CLI / Demo / 测试 | ⏳ | |
 
 ### 步骤 1 明细（2026-08-07）
@@ -126,4 +126,11 @@ querypilot/
   - 本地：纠错 Prompt、EXPLAIN 成败、纠错关闭降级
   - 假 client：一次纠错成功 / 纠错后仍失败 / 纠错被 L1 拦截
   - 真实 DeepSeek：合法 SQL 直通；非法列名 1-Shot 修正或降级
+
+### 步骤 6 明细（2026-08-08）
+
+- `querypilot/safety/result_probe.py`：空结果 / 零计数 / 异常量级探针，并按问题生成放宽条件建议
+- `querypilot/agent/pipeline.py`：`ask()` 串联 prune → generate → L1 → L2(+1-Shot) → execute → probe
+- `querypilot/agent/models.py`：新增 `PipelineResult`
+- 测试：`tests/test_pipeline.py`（9）— 探针单测、假 client 成功/L1 拦截/空结果探针、live `ask`
 

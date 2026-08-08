@@ -42,3 +42,25 @@ class SqlGenerationResult:
     raw: dict[str, Any] = field(default_factory=dict)
     prompt: PromptBundle | None = None
     pruned: PrunedSchema | None = None
+
+
+@dataclass
+class PipelineResult:
+    """End-to-end ask() outcome: SQL + rows or a degraded explanation."""
+
+    ok: bool
+    question: str
+    sql: str = ""
+    rationale: str = ""
+    tables: list[str] = field(default_factory=list)
+    columns: list[str] = field(default_factory=list)
+    rows: list[tuple[Any, ...]] = field(default_factory=list)
+    row_count: int = 0
+    degraded: bool = False
+    message: str = ""
+    probe_message: str = ""
+    probe_suggestions: list[str] = field(default_factory=list)
+    corrected: bool = False
+    stage: str = ""  # prune|generate|l1|l2|execute|probe|done
+    pruned: PrunedSchema | None = None
+    extras: dict[str, Any] = field(default_factory=dict)
