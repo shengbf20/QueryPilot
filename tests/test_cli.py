@@ -1,14 +1,16 @@
-"""Tests for QueryPilot CLI (phase-2 step 7)."""
+"""Tests for QueryPilot CLI (phase-2 ask + phase-3 eval)."""
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 from querypilot.agent.models import PipelineResult
-from querypilot.cli import build_parser, format_pipeline_result, main
+from querypilot.cli import build_parser, format_eval_report, format_pipeline_result, main
 from querypilot.config import get_settings
+from querypilot.eval.models import CaseEvalResult, EvalReport, TimingInfo
 
 
 def test_build_parser_ask_defaults():
@@ -104,6 +106,171 @@ def test_main_no_command_prints_help(capsys):
     assert code == 0
     captured = capsys.readouterr()
     assert "ask" in captured.out
+    assert "eval" in captured.out
+
+
+def test_build_parser_eval_defaults():
+    parser = build_parser()
+    args = parser.parse_args(["eval"])
+    assert args.command == "eval"
+    assert args.limit is None
+    assert args.path is None
+    assert args.max_rows is None
+    assert args.max_few_shots == 3
+    assert args.output is None
+    assert args.no_save is False
+
+
+def test_build_parser_eval_options():
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "eval",
+            "--limit",
+            "5",
+            "--path",
+            "data/Q&A.xlsx",
+            "--max-rows",
+            "50",
+            "--max-few-shots",
+            "2",
+            "--output",
+            "out.json",
+            "--no-save",
+        ]
+    )
+    assert args.limit == 5
+    assert args.path == "data/Q&A.xlsx"
+    assert args.max_rows == 50
+    assert args.max_few_shots == 2
+    assert args.output == "out.json"
+    assert args.no_save is True
+
+
+def test_format_eval_report_summary():
+    report = EvalReport(
+        total=2,
+        matched_count=1,
+        accuracy=0.5,
+        failed_ids=["2"],
+        p50_ms=100.0,
+        p95_ms=200.0,
+        results=[
+            CaseEvalResult(
+                case_id="1",
+                question="q1",
+                matched=True,
+                score=1.0,
+                ask_ok=True,
+                gold_ok=True,
+                stage="done",
+                timing=TimingInfo(total_ms=100.0),
+            ),
+            CaseEvalResult(
+                case_id="2",
+                question="q2",
+                matched=False,
+                score=0.0,
+                ask_ok=True,
+                gold_ok=True,
+                stage="done",
+                error="row multiset mismatch",
+                timing=TimingInfo(total_ms=200.0),
+            ),
+        ],
+    )
+    text = format_eval_report(report)
+    assert "EX: 1/2 = 50.0%" in text
+    assert "failed=['2']" in text
+    assert "p50_ms=100.0" in text
+    assert "[OK] id=1" in text
+    assert "[FAIL] id=2" in text
+    assert "row multiset mismatch" in text
+
+
+def test_main_eval_uses_run_eval(capsys, tmp_path: Path):
+    report = EvalReport(
+        total=1,
+        matched_count=1,
+        accuracy=1.0,
+        failed_ids=[],
+        p50_ms=12.0,
+        p95_ms=12.0,
+        results=[
+            CaseEvalResult(
+                case_id="1",
+                question="q",
+                matched=True,
+                score=1.0,
+                ask_ok=True,
+                gold_ok=True,
+                stage="done",
+                timing=TimingInfo(total_ms=12.0),
+            )
+        ],
+    )
+    out = tmp_path / "r.json"
+    with patch("querypilot.eval.run_eval", return_value=report) as mocked:
+        code = main(
+            [
+                "eval",
+                "--limit",
+                "2",
+                "--path",
+                "data/Q&A.xlsx",
+                "--max-rows",
+                "10",
+                "--max-few-shots",
+                "1",
+                "--output",
+                str(out),
+            ]
+        )
+    assert code == 0
+    mocked.assert_called_once_with(
+        path="data/Q&A.xlsx",
+        limit=2,
+        max_rows=10,
+        max_few_shots=1,
+    )
+    printed = capsys.readouterr().out
+    assert "EX: 1/1 = 100.0%" in printed
+    assert "report saved:" in printed
+    assert out.exists()
+
+
+def test_main_eval_no_save(capsys, tmp_path: Path):
+    report = EvalReport(total=0, matched_count=0, accuracy=0.0, results=[], failed_ids=[])
+    with patch("querypilot.eval.run_eval", return_value=report):
+        with patch("querypilot.eval.save_eval_report") as save_mock:
+            code = main(["eval", "--no-save"])
+    assert code == 0
+    save_mock.assert_not_called()
+    assert "report saved:" not in capsys.readouterr().out
+
+
+def test_main_eval_default_save_calls_with_none(capsys):
+    """P1: bare `eval` must persist via save_eval_report(report, None)."""
+    report = EvalReport(total=0, matched_count=0, accuracy=0.0, results=[], failed_ids=[])
+    with patch("querypilot.eval.run_eval", return_value=report):
+        with patch(
+            "querypilot.eval.save_eval_report",
+            return_value="logs/eval_reports/eval_default.json",
+        ) as save_mock:
+            code = main(["eval"])
+    assert code == 0
+    save_mock.assert_called_once()
+    saved_report, saved_path = save_mock.call_args.args
+    assert saved_report is report
+    assert saved_path is None
+    assert "report saved:" in capsys.readouterr().out
+
+
+def test_main_eval_output_and_no_save_are_exclusive():
+    """P1: --output and --no-save must not be combined silently."""
+    with pytest.raises(SystemExit) as exc:
+        main(["eval", "--output", "out.json", "--no-save"])
+    assert exc.value.code == 2
 
 
 def test_main_ask_uses_pipeline(capsys):
@@ -142,12 +309,16 @@ def test_main_ask_failed_returns_1(capsys):
     assert "(degraded)" in out
 
 
-@pytest.mark.skipif(
-    not get_settings().db_path.exists()
-    or not get_settings().deepseek_api_key
-    or get_settings().deepseek_api_key.startswith("sk-your"),
-    reason="DB or DEEPSEEK_API_KEY not ready",
-)
+def _cli_live_ready() -> bool:
+    settings = get_settings()
+    return (
+        settings.db_path.exists()
+        and bool(settings.deepseek_api_key)
+        and not settings.deepseek_api_key.startswith("sk-your")
+    )
+
+
+@pytest.mark.skipif(not _cli_live_ready(), reason="DB or DEEPSEEK_API_KEY not ready")
 def test_live_cli_ask_smoke(capsys):
     code = main(
         ["ask", "有多少年龄大于30岁的女性客户？", "--max-rows", "5", "--max-few-shots", "2"]
@@ -162,3 +333,22 @@ def test_live_cli_ask_smoke(capsys):
         assert code == 1
         assert "status: failed" in out
         assert "message:" in out
+
+
+@pytest.mark.skipif(
+    not _cli_live_ready() or not (get_settings().data_dir / "Q&A.xlsx").exists(),
+    reason="DB, DEEPSEEK_API_KEY, or Q&A.xlsx not ready",
+)
+def test_live_cli_eval_smoke(capsys, tmp_path: Path):
+    """P1: CLI eval → real run_eval; shape only, not EX target."""
+    out = tmp_path / "cli_eval_smoke.json"
+    code = main(["eval", "--limit", "1", "--output", str(out)])
+    printed = capsys.readouterr().out
+    assert code == 0
+    assert "EX:" in printed
+    assert "report saved:" in printed
+    assert out.exists()
+    text = out.read_text(encoding="utf-8")
+    assert '"total": 1' in text
+    assert "accuracy" in text
+    assert "p50_ms" in text
