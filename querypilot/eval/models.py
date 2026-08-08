@@ -94,3 +94,44 @@ class Diagnosis:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+# HITL buckets (phase-3 step 5)
+BUCKET_AUTO_PASS = "auto_pass"
+BUCKET_NEEDS_REVIEW = "needs_review"
+BUCKET_BAD_CASE = "bad_case"
+
+
+@dataclass
+class ReviewTicket:
+    """One case in the human-in-the-loop review queue."""
+
+    case_id: str
+    bucket: str
+    question: str
+    gold_sql: str = ""
+    pred_sql: str = ""
+    matched: bool = False
+    score: float = 0.0
+    confidence: float = 0.0
+    error: str = ""
+    error_types: list[str] = field(default_factory=list)
+    diagnosis_summary: str = ""
+    status: str = "open"  # open | approved | rejected
+    refluxed: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class ReviewQueue:
+    """File-level review queue built from an EvalReport (+ optional diagnoses)."""
+
+    tickets: list[ReviewTicket] = field(default_factory=list)
+    auto_pass_ids: list[str] = field(default_factory=list)
+    needs_review_ids: list[str] = field(default_factory=list)
+    bad_case_ids: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)

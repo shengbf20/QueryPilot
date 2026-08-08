@@ -86,6 +86,59 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="With --diagnose, use heuristic attribution only (no LLM)",
     )
+    eval_parser.add_argument(
+        "--review",
+        action="store_true",
+        help="Build HITL review queue (runs diagnose on failures if needed)",
+    )
+    eval_parser.add_argument(
+        "--review-output",
+        type=str,
+        default=None,
+        help="Write review queue JSON (default: logs/review/queue_*.json)",
+    )
+
+    review_parser = sub.add_parser("review", help="HITL review queue / Few-Shot reflux")
+    review_sub = review_parser.add_subparsers(dest="review_command")
+
+    build_p = review_sub.add_parser("build", help="Build review queue from saved eval report")
+    build_p.add_argument("--report", required=True, help="EvalReport JSON path")
+    build_p.add_argument("--diagnoses", default=None, help="Optional diagnoses JSON path")
+    build_p.add_argument("--output", default=None, help="Queue output path")
+    build_p.add_argument(
+        "--no-llm-diagnose",
+        action="store_true",
+        help="If diagnoses omitted, attribute failures with heuristic only",
+    )
+
+    reflux_p = review_sub.add_parser("reflux", help="Append a Few-Shot example manually")
+    reflux_p.add_argument("--question", required=True, help="Natural language question")
+    reflux_p.add_argument("--sql", required=True, help="SQL to store as few-shot")
+    reflux_p.add_argument("--rationale", default="", help="Optional rationale")
+    reflux_p.add_argument(
+        "--few-shots",
+        default=None,
+        help="Target YAML (default: metadata/few_shots/examples.yaml)",
+    )
+
+    approve_p = review_sub.add_parser(
+        "approve",
+        help="Approve a queue ticket and reflux gold/override SQL to Few-Shot",
+    )
+    approve_p.add_argument("--queue", required=True, help="Review queue JSON path")
+    approve_p.add_argument("--case-id", required=True, help="Ticket case id")
+    approve_p.add_argument("--sql", default=None, help="Override SQL (default: gold_sql)")
+    approve_p.add_argument("--rationale", default=None, help="Override rationale")
+    approve_p.add_argument(
+        "--few-shots",
+        default=None,
+        help="Target YAML (default: metadata/few_shots/examples.yaml)",
+    )
+    approve_p.add_argument(
+        "--write-queue",
+        default=None,
+        help="Optional path to rewrite updated queue JSON",
+    )
     return parser
 
 
@@ -174,14 +227,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             parser.error("--output and --no-save are mutually exclusive")
         if args.no_save and args.diagnose_output is not None:
             parser.error("--diagnose-output and --no-save are mutually exclusive")
+        if args.no_save and args.review_output is not None:
+            parser.error("--review-output and --no-save are mutually exclusive")
         if args.diagnose_output is not None and not args.diagnose:
             parser.error("--diagnose-output requires --diagnose")
+        if args.review_output is not None and not args.review:
+            parser.error("--review-output requires --review")
 
         from querypilot.eval import (
+            build_review_queue,
             diagnose_failures,
+            format_review_queue,
             run_eval,
             save_diagnoses,
             save_eval_report,
+            save_review_queue,
         )
 
         report = run_eval(
@@ -195,19 +255,152 @@ def main(argv: Sequence[str] | None = None) -> int:
             out = save_eval_report(report, args.output)
             print(f"report saved: {out}")
 
-        if args.diagnose:
+        diagnoses = []
+        need_diagnose = args.diagnose or args.review
+        if need_diagnose:
             diagnoses = diagnose_failures(
                 report,
                 use_llm=not args.no_llm_diagnose,
             )
-            print(format_diagnoses(diagnoses))
+            if args.diagnose:
+                print(format_diagnoses(diagnoses))
+                if not args.no_save:
+                    diag_path = save_diagnoses(diagnoses, args.diagnose_output)
+                    print(f"diagnoses saved: {diag_path}")
+
+        if args.review:
+            queue = build_review_queue(report, diagnoses)
+            print(format_review_queue(queue))
             if not args.no_save:
-                diag_path = save_diagnoses(diagnoses, args.diagnose_output)
-                print(f"diagnoses saved: {diag_path}")
+                qpath = save_review_queue(queue, args.review_output)
+                print(f"review queue saved: {qpath}")
+        return 0
+
+    if args.command == "review":
+        return _main_review(args, parser)
+
+    parser.print_help()
+    return 2
+
+
+def _main_review(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    import json
+    from pathlib import Path
+
+    from querypilot.eval import (
+        Diagnosis,
+        append_few_shot,
+        approve_and_reflux,
+        build_review_queue,
+        diagnose_failures,
+        find_ticket,
+        format_review_queue,
+        load_eval_report,
+        load_review_queue,
+        save_review_queue,
+    )
+
+    if args.review_command is None:
+        parser.print_help()
+        return 0
+
+    if args.review_command == "build":
+        report = _report_from_dict(load_eval_report(args.report))
+        if args.diagnoses:
+            diag_raw = json.loads(Path(args.diagnoses).read_text(encoding="utf-8"))
+            fields = Diagnosis.__dataclass_fields__
+            diagnoses = [
+                Diagnosis(**{k: v for k, v in item.items() if k in fields})
+                for item in (diag_raw.get("diagnoses") or [])
+            ]
+        else:
+            diagnoses = diagnose_failures(
+                report,
+                use_llm=not args.no_llm_diagnose,
+            )
+        queue = build_review_queue(report, diagnoses)
+        print(format_review_queue(queue))
+        path = save_review_queue(queue, args.output)
+        print(f"review queue saved: {path}")
+        return 0
+
+    if args.review_command == "reflux":
+        written, path = append_few_shot(
+            args.question,
+            args.sql,
+            rationale=args.rationale,
+            path=args.few_shots,
+        )
+        print(f"few-shot {'written' if written else 'skipped(duplicate)'}: {path}")
+        return 0
+
+    if args.review_command == "approve":
+        queue = load_review_queue(args.queue)
+        ticket = find_ticket(queue, args.case_id)
+        if ticket is None:
+            print(f"case_id not found: {args.case_id}")
+            return 1
+        written, path, ticket = approve_and_reflux(
+            ticket,
+            sql=args.sql,
+            rationale=args.rationale,
+            few_shots_path=args.few_shots,
+        )
+        print(
+            f"approved case={ticket.case_id} "
+            f"few-shot={'written' if written else 'skipped(duplicate)'}: {path}"
+        )
+        if args.write_queue:
+            save_review_queue(queue, args.write_queue)
+            print(f"review queue saved: {args.write_queue}")
         return 0
 
     parser.print_help()
     return 2
+
+
+def _report_from_dict(raw: dict) -> EvalReport:
+    from querypilot.eval.models import CaseEvalResult, TimingInfo
+
+    results = []
+    for item in raw.get("results") or []:
+        timing_raw = item.get("timing") or {}
+        results.append(
+            CaseEvalResult(
+                case_id=str(item.get("case_id", "")),
+                question=str(item.get("question", "")),
+                matched=bool(item.get("matched")),
+                score=float(item.get("score") or 0.0),
+                gold_sql=str(item.get("gold_sql", "")),
+                pred_sql=str(item.get("pred_sql", "")),
+                ask_ok=bool(item.get("ask_ok")),
+                gold_ok=bool(item.get("gold_ok")),
+                error=str(item.get("error", "")),
+                match_reason=str(item.get("match_reason", "")),
+                difficulty=item.get("difficulty"),
+                timing=TimingInfo(
+                    **{
+                        k: float(timing_raw.get(k, 0.0))
+                        for k in TimingInfo.__dataclass_fields__
+                    }
+                ),
+                stage=str(item.get("stage", "")),
+                extras=dict(item.get("extras") or {}),
+            )
+        )
+    return EvalReport(
+        total=int(raw.get("total") or len(results)),
+        matched_count=int(
+            raw.get("matched_count") or sum(1 for r in results if r.matched)
+        ),
+        accuracy=float(raw.get("accuracy") or 0.0),
+        results=results,
+        failed_ids=list(raw.get("failed_ids") or []),
+        by_difficulty=dict(raw.get("by_difficulty") or {}),
+        p50_ms=raw.get("p50_ms"),
+        p95_ms=raw.get("p95_ms"),
+        mean_ms=raw.get("mean_ms"),
+    )
 
 
 if __name__ == "__main__":

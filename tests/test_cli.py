@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -113,6 +114,7 @@ def test_main_no_command_prints_help(capsys):
     captured = capsys.readouterr()
     assert "ask" in captured.out
     assert "eval" in captured.out
+    assert "review" in captured.out
 
 
 def test_build_parser_eval_defaults():
@@ -128,6 +130,8 @@ def test_build_parser_eval_defaults():
     assert args.diagnose is False
     assert args.diagnose_output is None
     assert args.no_llm_diagnose is False
+    assert args.review is False
+    assert args.review_output is None
 
 
 def test_build_parser_eval_options():
@@ -373,6 +377,209 @@ def test_main_eval_diagnose_output_and_no_save_exclusive():
     with pytest.raises(SystemExit) as exc:
         main(["eval", "--diagnose", "--diagnose-output", "d.json", "--no-save"])
     assert exc.value.code == 2
+
+
+def test_main_eval_review_builds_queue(capsys, tmp_path: Path):
+    report = EvalReport(
+        total=2,
+        matched_count=1,
+        accuracy=0.5,
+        failed_ids=["2"],
+        results=[
+            CaseEvalResult(
+                case_id="1",
+                question="ok",
+                matched=True,
+                score=1.0,
+                ask_ok=True,
+                gold_ok=True,
+                stage="done",
+                timing=TimingInfo(total_ms=1.0),
+            ),
+            CaseEvalResult(
+                case_id="2",
+                question="bad",
+                matched=False,
+                score=0.0,
+                error="column count mismatch: pred=3 gold=2",
+                gold_sql="SELECT 1",
+                pred_sql="SELECT 1,2,3",
+                ask_ok=True,
+                gold_ok=True,
+                stage="done",
+                timing=TimingInfo(total_ms=2.0),
+            ),
+        ],
+    )
+    qout = tmp_path / "queue.json"
+    with patch("querypilot.eval.run_eval", return_value=report):
+        with patch("querypilot.eval.save_eval_report", return_value=tmp_path / "r.json"):
+            with patch("querypilot.eval.save_diagnoses", return_value=tmp_path / "d.json"):
+                code = main(
+                    [
+                        "eval",
+                        "--review",
+                        "--no-llm-diagnose",
+                        "--review-output",
+                        str(qout),
+                    ]
+                )
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "review:" in out
+    assert "auto_pass=['1']" in out
+    # heuristic conf 0.55 < 0.60 → bad_case (not needs_review)
+    assert "bad_case=['2']" in out
+    assert qout.exists()
+    loaded = json.loads(qout.read_text(encoding="utf-8"))
+    assert loaded["bad_case_ids"] == ["2"]
+
+
+def test_main_eval_review_no_save_skips_queue_persist(capsys):
+    """P0: --review --no-save prints queue but must not write queue JSON."""
+    report = EvalReport(
+        total=1,
+        matched_count=0,
+        accuracy=0.0,
+        failed_ids=["2"],
+        results=[
+            CaseEvalResult(
+                case_id="2",
+                question="q",
+                matched=False,
+                score=0.0,
+                error="column count mismatch: pred=3 gold=2",
+                ask_ok=True,
+                gold_ok=True,
+                stage="done",
+                timing=TimingInfo(total_ms=1.0),
+            )
+        ],
+    )
+    with patch("querypilot.eval.run_eval", return_value=report):
+        with patch("querypilot.eval.save_eval_report") as save_report:
+            with patch("querypilot.eval.save_review_queue") as save_queue:
+                with patch("querypilot.eval.save_diagnoses") as save_diag:
+                    code = main(
+                        ["eval", "--review", "--no-llm-diagnose", "--no-save"]
+                    )
+    assert code == 0
+    save_report.assert_not_called()
+    save_queue.assert_not_called()
+    save_diag.assert_not_called()
+    out = capsys.readouterr().out
+    assert "review:" in out
+    assert "review queue saved:" not in out
+
+
+def test_main_eval_review_output_requires_flag():
+    """P1: --review-output requires --review."""
+    with pytest.raises(SystemExit) as exc:
+        main(["eval", "--review-output", "q.json"])
+    assert exc.value.code == 2
+
+
+def test_main_eval_review_output_and_no_save_exclusive():
+    """P1: --review-output cannot combine with --no-save."""
+    with pytest.raises(SystemExit) as exc:
+        main(["eval", "--review", "--review-output", "q.json", "--no-save"])
+    assert exc.value.code == 2
+
+
+def test_main_review_reflux(tmp_path: Path, capsys):
+    few = tmp_path / "examples.yaml"
+    few.write_text("examples: []\n", encoding="utf-8")
+    code = main(
+        [
+            "review",
+            "reflux",
+            "--question",
+            "测试问句",
+            "--sql",
+            "SELECT 1",
+            "--rationale",
+            "unit",
+            "--few-shots",
+            str(few),
+        ]
+    )
+    assert code == 0
+    assert "written" in capsys.readouterr().out
+    assert "测试问句" in few.read_text(encoding="utf-8")
+
+
+def test_main_review_approve_and_missing_case(tmp_path: Path, capsys):
+    """P1: review approve refluxes gold SQL; unknown case_id → exit 1."""
+    from querypilot.eval import (
+        Diagnosis,
+        build_review_queue,
+        save_review_queue,
+    )
+
+    few = tmp_path / "examples.yaml"
+    few.write_text("examples: []\n", encoding="utf-8")
+    queue_path = tmp_path / "queue.json"
+    report = EvalReport(
+        total=1,
+        matched_count=0,
+        accuracy=0.0,
+        failed_ids=["2"],
+        results=[
+            CaseEvalResult(
+                case_id="2",
+                question="年龄段资产",
+                matched=False,
+                score=0.0,
+                gold_sql="SELECT age, SUM(a) AS aset FROM t GROUP BY age",
+                ask_ok=True,
+                gold_ok=True,
+                stage="done",
+                timing=TimingInfo(total_ms=1.0),
+            )
+        ],
+    )
+    queue = build_review_queue(
+        report,
+        [Diagnosis(case_id="2", matched=False, confidence=0.8, summary="cols")],
+    )
+    save_review_queue(queue, queue_path)
+
+    code = main(
+        [
+            "review",
+            "approve",
+            "--queue",
+            str(queue_path),
+            "--case-id",
+            "2",
+            "--few-shots",
+            str(few),
+            "--write-queue",
+            str(queue_path),
+        ]
+    )
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "approved case=2" in out
+    assert "written" in out
+    assert "年龄段资产" in few.read_text(encoding="utf-8")
+    reloaded = json.loads(queue_path.read_text(encoding="utf-8"))
+    assert reloaded["tickets"][0]["status"] == "approved"
+
+    code_miss = main(
+        [
+            "review",
+            "approve",
+            "--queue",
+            str(queue_path),
+            "--case-id",
+            "missing",
+            "--few-shots",
+            str(few),
+        ]
+    )
+    assert code_miss == 1
+    assert "not found" in capsys.readouterr().out
 
 
 def test_main_eval_default_save_calls_with_none(capsys):

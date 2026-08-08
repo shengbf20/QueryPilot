@@ -9,6 +9,7 @@ db/
 .pytest_cache/
 .ruff_cache/
 logs/eval_reports/
+logs/review/
 artifacts/eval/
 *.egg-info/
 dist/

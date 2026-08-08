@@ -11,12 +11,28 @@ from querypilot.eval.eval_agent import (
 )
 from querypilot.eval.execution_match import compare_results, execution_match
 from querypilot.eval.models import (
+    BUCKET_AUTO_PASS,
+    BUCKET_BAD_CASE,
+    BUCKET_NEEDS_REVIEW,
     CaseEvalResult,
     Diagnosis,
     EvalCase,
     EvalReport,
     MatchResult,
+    ReviewQueue,
+    ReviewTicket,
     TimingInfo,
+)
+from querypilot.eval.review import (
+    append_few_shot,
+    approve_and_reflux,
+    build_review_queue,
+    find_ticket,
+    format_review_queue,
+    load_review_queue,
+    reject_ticket,
+    route_case,
+    save_review_queue,
 )
 from querypilot.eval.runner import (
     default_report_dir,
@@ -29,13 +45,21 @@ from querypilot.eval.runner import (
 )
 
 __all__ = [
+    "BUCKET_AUTO_PASS",
+    "BUCKET_BAD_CASE",
+    "BUCKET_NEEDS_REVIEW",
     "CaseEvalResult",
     "Diagnosis",
     "ERROR_TYPES",
     "EvalCase",
     "EvalReport",
     "MatchResult",
+    "ReviewQueue",
+    "ReviewTicket",
     "TimingInfo",
+    "append_few_shot",
+    "approve_and_reflux",
+    "build_review_queue",
     "cases_from_records",
     "classify_heuristic",
     "compare_results",
@@ -44,13 +68,19 @@ __all__ = [
     "diagnose_case",
     "diagnose_failures",
     "execution_match",
+    "find_ticket",
+    "format_review_queue",
     "load_eval_report",
     "load_qa_cases",
+    "load_review_queue",
     "percentile",
+    "reject_ticket",
     "render_diagnosis_markdown",
+    "route_case",
     "run_case",
     "run_eval",
     "save_diagnoses",
     "save_eval_report",
+    "save_review_queue",
     "summarize",
 ]
