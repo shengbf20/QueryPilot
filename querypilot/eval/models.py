@@ -75,3 +75,22 @@ class EvalReport:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+@dataclass
+class Diagnosis:
+    """Eval-Agent attribution for one case (EX fail or agent/gold failure)."""
+
+    case_id: str
+    matched: bool
+    error_types: list[str] = field(default_factory=list)
+    summary: str = ""
+    evidence: list[str] = field(default_factory=list)
+    suggestions: list[str] = field(default_factory=list)
+    confidence: float = 0.0
+    markdown: str = ""
+    source: str = "heuristic"  # heuristic | llm | heuristic+llm
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)

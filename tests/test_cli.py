@@ -8,9 +8,15 @@ from unittest.mock import patch
 import pytest
 
 from querypilot.agent.models import PipelineResult
-from querypilot.cli import build_parser, format_eval_report, format_pipeline_result, main
+from querypilot.cli import (
+    build_parser,
+    format_diagnoses,
+    format_eval_report,
+    format_pipeline_result,
+    main,
+)
 from querypilot.config import get_settings
-from querypilot.eval.models import CaseEvalResult, EvalReport, TimingInfo
+from querypilot.eval.models import CaseEvalResult, Diagnosis, EvalReport, TimingInfo
 
 
 def test_build_parser_ask_defaults():
@@ -119,6 +125,9 @@ def test_build_parser_eval_defaults():
     assert args.max_few_shots == 3
     assert args.output is None
     assert args.no_save is False
+    assert args.diagnose is False
+    assert args.diagnose_output is None
+    assert args.no_llm_diagnose is False
 
 
 def test_build_parser_eval_options():
@@ -247,6 +256,123 @@ def test_main_eval_no_save(capsys, tmp_path: Path):
     assert code == 0
     save_mock.assert_not_called()
     assert "report saved:" not in capsys.readouterr().out
+
+
+def test_format_diagnoses():
+    text = format_diagnoses(
+        [
+            Diagnosis(
+                case_id="2",
+                matched=False,
+                error_types=["column_mismatch"],
+                summary="列数不一致",
+                markdown="## Case 2\n\n**Summary:** 列数不一致\n",
+            )
+        ]
+    )
+    assert "Case 2" in text
+    assert "列数不一致" in text
+    assert format_diagnoses([]) == "diagnoses: (none)"
+
+
+def test_main_eval_diagnose_heuristic(capsys, tmp_path: Path):
+    report = EvalReport(
+        total=1,
+        matched_count=0,
+        accuracy=0.0,
+        failed_ids=["2"],
+        results=[
+            CaseEvalResult(
+                case_id="2",
+                question="q",
+                matched=False,
+                score=0.0,
+                error="column count mismatch: pred=3 gold=2",
+                ask_ok=True,
+                gold_ok=True,
+                stage="done",
+                timing=TimingInfo(total_ms=10.0),
+            )
+        ],
+    )
+    diag_out = tmp_path / "diag.json"
+    with patch("querypilot.eval.run_eval", return_value=report):
+        with patch("querypilot.eval.save_eval_report", return_value=tmp_path / "r.json"):
+            code = main(
+                [
+                    "eval",
+                    "--diagnose",
+                    "--no-llm-diagnose",
+                    "--diagnose-output",
+                    str(diag_out),
+                ]
+            )
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "EX:" in out
+    assert "Case 2" in out or "column_mismatch" in out
+    assert "diagnoses saved:" in out
+    assert diag_out.exists()
+
+
+def test_main_eval_diagnose_output_requires_flag():
+    with pytest.raises(SystemExit) as exc:
+        main(["eval", "--diagnose-output", "d.json"])
+    assert exc.value.code == 2
+
+
+def test_main_eval_diagnose_no_save_skips_diag_persist(capsys):
+    """P0: --diagnose --no-save prints attribution but must not write diag JSON."""
+    report = EvalReport(
+        total=1,
+        matched_count=0,
+        accuracy=0.0,
+        failed_ids=["2"],
+        results=[
+            CaseEvalResult(
+                case_id="2",
+                question="q",
+                matched=False,
+                score=0.0,
+                error="column count mismatch: pred=3 gold=2",
+                ask_ok=True,
+                gold_ok=True,
+                stage="done",
+                timing=TimingInfo(total_ms=10.0),
+            )
+        ],
+    )
+    with patch("querypilot.eval.run_eval", return_value=report):
+        with patch("querypilot.eval.save_eval_report") as save_report:
+            with patch("querypilot.eval.save_diagnoses") as save_diag:
+                with patch(
+                    "querypilot.eval.diagnose_failures",
+                    return_value=[
+                        Diagnosis(
+                            case_id="2",
+                            matched=False,
+                            error_types=["column_mismatch"],
+                            summary="列数不一致",
+                            markdown="## Case 2\n",
+                        )
+                    ],
+                ) as diagnose_mock:
+                    code = main(["eval", "--diagnose", "--no-llm-diagnose", "--no-save"])
+    assert code == 0
+    diagnose_mock.assert_called_once()
+    assert diagnose_mock.call_args.kwargs.get("use_llm") is False
+    save_report.assert_not_called()
+    save_diag.assert_not_called()
+    out = capsys.readouterr().out
+    assert "Case 2" in out
+    assert "diagnoses saved:" not in out
+
+
+def test_main_eval_diagnose_output_and_no_save_exclusive():
+    """P1: --diagnose-output cannot combine with --no-save."""
+    with pytest.raises(SystemExit) as exc:
+        main(["eval", "--diagnose", "--diagnose-output", "d.json", "--no-save"])
+    assert exc.value.code == 2
 
 
 def test_main_eval_default_save_calls_with_none(capsys):

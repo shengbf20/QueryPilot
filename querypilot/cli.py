@@ -7,7 +7,7 @@ from typing import Sequence
 
 from querypilot import __version__
 from querypilot.agent.models import PipelineResult
-from querypilot.eval.models import EvalReport
+from querypilot.eval.models import Diagnosis, EvalReport
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -70,6 +70,22 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Do not write a JSON report",
     )
+    eval_parser.add_argument(
+        "--diagnose",
+        action="store_true",
+        help="Run Eval-Agent attribution on failed cases",
+    )
+    eval_parser.add_argument(
+        "--diagnose-output",
+        type=str,
+        default=None,
+        help="Write diagnosis JSON path (default: logs/eval_reports/diag_*.json)",
+    )
+    eval_parser.add_argument(
+        "--no-llm-diagnose",
+        action="store_true",
+        help="With --diagnose, use heuristic attribution only (no LLM)",
+    )
     return parser
 
 
@@ -126,6 +142,13 @@ def format_eval_report(report: EvalReport) -> str:
     return "\n".join(lines)
 
 
+def format_diagnoses(diagnoses: Sequence[Diagnosis]) -> str:
+    """Pretty-print Eval-Agent diagnoses (Markdown blocks)."""
+    if not diagnoses:
+        return "diagnoses: (none)"
+    return "\n".join(d.markdown.rstrip() for d in diagnoses)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
@@ -149,8 +172,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "eval":
         if args.no_save and args.output is not None:
             parser.error("--output and --no-save are mutually exclusive")
+        if args.no_save and args.diagnose_output is not None:
+            parser.error("--diagnose-output and --no-save are mutually exclusive")
+        if args.diagnose_output is not None and not args.diagnose:
+            parser.error("--diagnose-output requires --diagnose")
 
-        from querypilot.eval import run_eval, save_eval_report
+        from querypilot.eval import (
+            diagnose_failures,
+            run_eval,
+            save_diagnoses,
+            save_eval_report,
+        )
 
         report = run_eval(
             path=args.path,
@@ -162,6 +194,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         if not args.no_save:
             out = save_eval_report(report, args.output)
             print(f"report saved: {out}")
+
+        if args.diagnose:
+            diagnoses = diagnose_failures(
+                report,
+                use_llm=not args.no_llm_diagnose,
+            )
+            print(format_diagnoses(diagnoses))
+            if not args.no_save:
+                diag_path = save_diagnoses(diagnoses, args.diagnose_output)
+                print(f"diagnoses saved: {diag_path}")
         return 0
 
     parser.print_help()
