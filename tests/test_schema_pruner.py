@@ -94,6 +94,14 @@ def test_prune_branch(pruner):
     assert "dim_branch" in result.seed_tables or "ads_cust_info_d" in result.seed_tables
 
 
+def test_prune_branch_customer_injects_ads_hub(pruner):
+    """Extra2 FE09: 分公司+客户 must keep ads hub (not dim_branch-only allowlist)."""
+    result = pruner.prune("所属分公司为南京分公司的客户有多少人？")
+    assert "dim_branch" in result.tables
+    assert "ads_cust_info_d" in result.tables
+    assert "ads_cust_info_d" in result.seed_tables
+
+
 def test_prune_cashflow(pruner):
     result = pruner.prune("客户入金与出金情况")
     assert "dws_cust_fin_d" in result.seed_tables

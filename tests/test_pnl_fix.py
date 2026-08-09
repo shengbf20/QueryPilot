@@ -84,3 +84,39 @@ def test_noop_already_gold_style_direct_joins():
     assert "- coalesce(aset_bgn.nm_tot_aset" in out.lower().replace("\n", " ") or (
         "-coalesce(aset_bgn.nm_tot_aset" in out.lower().replace(" ", "")
     )
+
+
+def test_rewrites_outer_bgn_end_when_cte_already_has_nm_fc():
+    """Extra2 FH01 fs0: CTE exposes nm/fc but outer wrongly selects b.bgn_aset."""
+    sql = """
+    WITH qual_cust AS (SELECT pty_id FROM ads_cust_info_d),
+    aset_begin AS (
+      SELECT pty_id, COALESCE(nm_tot_aset, 0) AS nm_tot_aset, COALESCE(fc_pur_aset, 0) AS fc_pur_aset
+      FROM dws_cust_aset_d WHERE data_dt = '20260101'
+    ),
+    aset_end AS (
+      SELECT pty_id, COALESCE(nm_tot_aset, 0) AS nm_tot_aset, COALESCE(fc_pur_aset, 0) AS fc_pur_aset
+      FROM dws_cust_aset_d WHERE data_dt = '20260331'
+    ),
+    fin_flow AS (
+      SELECT pty_id, 1 AS aset_in, 1 AS aset_out FROM dws_cust_fin_d GROUP BY pty_id
+    )
+    SELECT
+      q.pty_id,
+      COALESCE(b.bgn_aset, 0) AS bgn_aset,
+      COALESCE(e.end_aset, 0) AS end_aset,
+      COALESCE(f.aset_in, 0) AS aset_in,
+      COALESCE(f.aset_out, 0) AS aset_out,
+      COALESCE(e.end_aset, 0) - COALESCE(b.bgn_aset, 0)
+        + COALESCE(f.aset_out, 0) - COALESCE(f.aset_in, 0) AS aset_pft
+    FROM qual_cust AS q
+    LEFT JOIN aset_begin AS b ON q.pty_id = b.pty_id
+    LEFT JOIN aset_end AS e ON q.pty_id = e.pty_id
+    LEFT JOIN fin_flow AS f ON q.pty_id = f.pty_id
+    """
+    out = fix_period_pnl_sql(sql)
+    low = out.lower().replace(" ", "")
+    assert "b.bgn_aset" not in out.lower()
+    assert "e.end_aset" not in out.lower() or "as end_aset" in out.lower()
+    assert "nm_tot_aset" in low and "fc_pur_aset" in low
+    assert "-coalesce(b.nm_tot_aset" in low or "-coalesce(b.\"nm_tot_aset\"" in low

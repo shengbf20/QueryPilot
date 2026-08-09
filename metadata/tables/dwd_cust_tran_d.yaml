@@ -46,6 +46,7 @@ columns:
   - name: buy_fare
     type: DECIMAL
     description: 买入费用
+    aliases: [买入手续费, 手续费]
   - name: sell_cnt
     type: INTEGER
     description: 卖出次数
@@ -64,3 +65,4 @@ columns:
   - name: sell_fare
     type: DECIMAL
     description: 卖出费用
+    aliases: [卖出手续费, 手续费]

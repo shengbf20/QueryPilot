@@ -37,6 +37,7 @@ columns:
   - name: cust_type
     type: VARCHAR
     description: 客户类型
+    enum_ref: cust_type
     enum_values:
       P: 个人客户
   - name: prov_name

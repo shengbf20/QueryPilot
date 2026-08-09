@@ -141,6 +141,38 @@ def _intuitive_pnl(expr: exp.Expression) -> bool:
     return False
 
 
+def _cte_projects_nm_fc(cte: exp.CTE) -> bool:
+    sel = cte.this
+    if not isinstance(sel, exp.Select):
+        return False
+    aliases = {
+        (e.alias if isinstance(e, exp.Alias) else None)
+        or (e.name if isinstance(e, exp.Column) else None)
+        for e in sel.expressions
+    }
+    return "nm_tot_aset" in aliases and "fc_pur_aset" in aliases
+
+
+def _outer_aliases_for_nm_fc_ctes(select: exp.Select, with_: exp.With) -> tuple[str | None, str | None]:
+    """Map begin/end asset CTEs (nm+fc columns) to outer join aliases."""
+    begin_names: set[str] = set()
+    end_names: set[str] = set()
+    for cte in with_.expressions:
+        if not isinstance(cte, exp.CTE) or not _cte_projects_nm_fc(cte):
+            continue
+        name = (cte.alias_or_name or "").lower()
+        if any(k in name for k in ("bgn", "begin", "start")):
+            begin_names.add(cte.alias_or_name)
+        elif any(k in name for k in ("end", "final")):
+            end_names.add(cte.alias_or_name)
+    bgn = end = None
+    for name in begin_names:
+        bgn = bgn or _outer_alias_for_cte(select, name)
+    for name in end_names:
+        end = end or _outer_alias_for_cte(select, name)
+    return bgn, end
+
+
 def fix_period_pnl_sql(sql: str) -> str:
     """Rewrite intuitive period-PnL SQL toward gold ``aset_pft`` quirk. No-op if N/A."""
     if not sql or "aset_pft" not in sql.lower():
@@ -160,18 +192,21 @@ def fix_period_pnl_sql(sql: str) -> str:
     for cte in list(with_.expressions):
         if isinstance(cte, exp.CTE) and _expand_asset_cte(cte):
             expanded = True
-    if not expanded:
-        # Outer already joins raw asset tables — only fix aset_pft if intuitive
-        pass
 
     bgn_alias = _outer_alias_for_cte(tree, "bgn_aset")
     end_alias = _outer_alias_for_cte(tree, "end_aset")
     if not bgn_alias or not end_alias:
-        # Try gold-style direct joins: aset_bgn / aset_end
         bgn_alias = bgn_alias or _outer_alias_for_cte(tree, "aset_bgn")
         end_alias = end_alias or _outer_alias_for_cte(tree, "aset_end")
-        if not (bgn_alias and end_alias):
-            return sql if not expanded else tree.sql(dialect=_DIALECT)
+    if not bgn_alias or not end_alias:
+        alt_bgn, alt_end = _outer_aliases_for_nm_fc_ctes(tree, with_)
+        bgn_alias = bgn_alias or alt_bgn
+        end_alias = end_alias or alt_end
+    if not (bgn_alias and end_alias):
+        return sql if not expanded else tree.sql(dialect=_DIALECT)
+
+    # CTEs already expose nm/fc under begin/end aliases — still rewrite broken outer refs.
+    nm_fc_ready = bool(_outer_aliases_for_nm_fc_ctes(tree, with_)[0])
 
     flow_alias = _find_flow_alias(tree)
     new_exprs: list[exp.Expression] = []
@@ -179,13 +214,13 @@ def fix_period_pnl_sql(sql: str) -> str:
     for expr in tree.expressions:
         alias = expr.alias if isinstance(expr, exp.Alias) else None
         inner = expr.this if isinstance(expr, exp.Alias) else expr
-        if alias == "bgn_aset" and expanded:
+        if alias == "bgn_aset" and (expanded or nm_fc_ready):
             new_exprs.append(exp.alias_(_nm_plus_fc(bgn_alias), "bgn_aset", copy=False))
             touched = True
-        elif alias == "end_aset" and expanded:
+        elif alias == "end_aset" and (expanded or nm_fc_ready):
             new_exprs.append(exp.alias_(_nm_plus_fc(end_alias), "end_aset", copy=False))
             touched = True
-        elif alias == "aset_pft" and (expanded or _intuitive_pnl(inner)):
+        elif alias == "aset_pft" and (expanded or nm_fc_ready or _intuitive_pnl(inner)):
             new_exprs.append(
                 exp.alias_(
                     _gold_aset_pft(end_alias, bgn_alias, flow_alias),

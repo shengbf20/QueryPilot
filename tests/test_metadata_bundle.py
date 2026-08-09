@@ -35,6 +35,15 @@ def test_format_table_schema():
     assert "gender_cd" in text
 
 
+def test_format_table_schema_renders_cust_type_enum():
+    """Static cust_type must appear even when dim_public codes are not loaded."""
+    metadata = load_metadata(load_db_codes=False)
+    text = metadata.format_table_schema("ads_cust_info_d", include_values=True)
+    assert "cust_type" in text
+    assert "个人客户" in text
+    assert "个人客户(P)" in text or "(P)" in text
+
+
 def test_load_db_codes_false_leaves_codes_unloaded():
     metadata = load_metadata(load_db_codes=False)
     assert metadata.values.get_code_type_id("ads_cust_info_d", "gender_cd") == "500"

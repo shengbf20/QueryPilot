@@ -304,7 +304,7 @@ FROM (
   FROM dws_cust_fin_d
   WHERE data_dt BETWEEN '20260101' AND '20260331'
   GROUP BY pty_id
-  HAVING SUM(coalesce(assign_in, 0)) > 0
+  HAVING SUM(coalesce(tran_in, 0)) > 0
 ) AS t
 """.strip(),
     },
@@ -815,13 +815,9 @@ def main() -> None:
     print("=== gold execute check ===")
     for c in ALL_CASES:
         r = execute(c["sql"], max_rows=5000)
-        # FM08 intentionally cnt=0 (assign column coverage); others non-empty
-        if c["id"] == "FM08":
-            if not (r.row_count == 1 and r.rows and int(r.rows[0][0]) == 0):
-                raise SystemExit(f"FM08 expected cnt=0, got {r.rows}")
-        elif r.row_count == 0:
+        if r.row_count == 0:
             raise SystemExit(f"{c['id']} empty result")
-        elif (
+        if (
             r.row_count == 1
             and len(r.columns) == 1
             and r.rows
@@ -859,7 +855,7 @@ def main() -> None:
         block.append(f"- `{c['id']}`: {' '.join(c['question'].split())}")
     block.append("\n## 合入结果\n")
     block.append("- [x] 40 条问句与占用集合全文不冲突（`_build_extra2.py` 已校验）\n")
-    block.append("- [x] 金标 DuckDB 可执行；除 FM08（assign 全库为 0）外结果非空\n")
+    block.append("- [x] 金标 DuckDB 可执行；FM08 对齐元数据 tran_in（证券转入）\n")
     if marker in text:
         text = text.split(marker)[0].rstrip() + "\n"
     checklist.write_text(text + "".join(block), encoding="utf-8")

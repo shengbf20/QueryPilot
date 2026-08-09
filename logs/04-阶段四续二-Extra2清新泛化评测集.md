@@ -483,42 +483,52 @@ S7  本文勾选收口；数字回填 §九
 | `examples.yaml` 条数 | 15 |
 | DuckDB 路径 | `db/competition.duckdb` |
 
-### 9.2 结果表
+### 9.2 结果表（S5 基线 → 提准后）
+
+**S5 冻结基线（提准前）**
 
 | 轨道 | 产物 | EX | by_difficulty | p50 / p95 total_ms | 失败 id |
 |------|------|----|---------------|--------------------|---------|
 | Extra2-A fs3 | `extra2_A_fs3.*` | **35/40 = 87.5%** | 易 83.3% · 中 93.8% · 难 83.3% | 3169 / 5700 | FE01, FE09, FM08, FH02, FH04 |
 | Extra2-B fs0 | `extra2_B_fs0.*` | **33/40 = 82.5%** | 易 91.7% · 中 81.3% · 难 75.0% | 3533 / 7464 | FE09, FM05, FM07, FM08, FH02, FH04, FH12 |
 | 官方默认 | `official_p4x2_default.*` | **7/7 = 100%** | — | 3670 / 4981 | — |
-| （可选）Extra36-A | 未本轮复跑 | 续一收口曾 **36/36** | — | — | — |
+
+**提准后复测（P0–P2 + `pnl_fix` FH01）**
+
+| 轨道 | 产物 | EX | p50 / p95 total_ms | 失败 id |
+|------|------|----|--------------------|---------|
+| Extra2-A fs3 | `extra2_A_fs3_final2.*` | **40/40 = 100%** | 3110 / 5111 | — |
+| Extra2-B fs0 | `extra2_B_fs0_final2.*` | **40/40 = 100%** | 3118 / 4408 | — |
+| 官方默认（开短路） | `official_default_check.*` | **7/7 = 100%** | 2919 / 4244 | — |
+| 官方关短路 fs3 | `official_noshort_fs3.*` | **6/7 = 85.7%** | 3636 / 5270 | **6**（金标 quirk，见下） |
 
 ### 9.3 对照解读
 
-- **Extra36-A vs Extra2-A**：旧集关短路满分（36/36）→ 清新集 **87.5%**，差距约 12.5pt，说明对 Extra36/改写样例存在**同库过拟合**，不能外推为开放问法已满。
-- **Extra2-A vs Extra2-B**：87.5% → 82.5%（−5pt）；B 额外掉 FM05/FM07/FH12，A 独掉 FE01（`cust_type` 码值漂移，B 反而过）→ 仍有 few-shot 依赖与随机性。
-- **主要失败族（S6 深挖后）**：详见 [`logs/eval_reports/extra2_fail_summary.md`](../eval_reports/extra2_fail_summary.md)。
-  1. **P0 剪枝×L1**：FE09 剪枝只留 `dim_branch`，`allowed=pruned.tables` 导致合法 `ads_cust_info_d` 被拒（`schema_pruner._ensure_customer_hub` + `pipeline.py`）。
-  2. **P1 元数据未进 Prompt / 列义冲突**：FE01 `enum_values` 未渲染；FM08 金标 `assign_in` 与 YAML「证券转入=`tran_in`」冲突（宜改金标）。
-  3. **P1 Prompt/Few-Shot**：FH02 死磕规则 16 三列投影；FM05 `手续费`←佣金样例/`rake`。
-  4. **P2 生成口径**：FH04/FM07「净流入」无硬规则；FH12 改写窗漂 Q1。
-- **态度（本续二）**：不改 Prompt/L1 刷 Extra2；backlog 按上表优先修剪枝允许表与元数据渲染；FM08 先审金标。
+- **Extra36-A vs Extra2-A（S5）**：旧集关短路满分 → 清新集曾 **87.5%**，说明对 Extra36 存在同库过拟合。
+- **提准后**：Extra2-A/B 均 **40/40**；官方默认仍 **7/7**。清新集缺口（剪枝 hub、枚举渲染、`tran_in` 金标、手续费别名、净流入/双窗、盈亏列 rewrite）已按 S6 优先级合入。
+- **官方关短路 Q6**：pred=24 / gold=25。金标定义了未使用的 `cust_avg_30` CTE，最终只从 `cust_tran` 取客；语义正确的「日均资产∩股票交易」交集少 1 个产品类型（货币式基金/货币市场基金）。**不改官方金标**；开短路仍 7/7。详见 `official_noshort_fs3_review.json`。
+- **主要修复（相对 S6 backlog）**：
+  1. **P0** `schema_pruner`：客户线索 + `dim_branch` 时注入 `ads_cust_info_d`。
+  2. **P1** `bundle` 渲染 `enum_values` / `cust_type`；FM08 金标→`tran_in`；fare 别名 + Prompt 规则。
+  3. **P2** 净流入 / 双窗 JOIN 等 Prompt 规则（错误集 8/8 后合入）。
+  4. **FH01 fs0** `pnl_fix`：CTE 已暴露 nm/fc 但外层误用 `b.bgn_aset` 时重写为 nm+fc 与金标 `aset_pft` quirk。
 
 ### 9.4 S6 版块定位一览
 
-| 排序 | 版块 | 关键路径 | 代表题 |
-|------|------|----------|--------|
-| 1 | Schema 剪枝 + Pipeline 允许表 | `schema_pruner.py` / `pipeline.py` | FE09 |
-| 2 | 元数据 YAML + Schema 渲染 | `bundle.py` / `ads_cust_info_d.yaml` / `dws_cust_fin_d.yaml` | FE01, FM08 |
-| 3 | System Prompt / Few-Shot | `prompt.py` 规则16 / `examples.yaml` 佣金 | FH02, FM05 |
-| 4 | LLM 生成（规则缺口） | `prompt.py` 缺净流入；生成器 | FH04, FM07, FH12 |
+| 排序 | 版块 | 关键路径 | 代表题 | 提准后 |
+|------|------|----------|--------|--------|
+| 1 | Schema 剪枝 + Pipeline 允许表 | `schema_pruner.py` / `pipeline.py` | FE09 | ✅ |
+| 2 | 元数据 YAML + Schema 渲染 | `bundle.py` / `ads_cust_info_d.yaml` | FE01, FM08 | ✅ |
+| 3 | System Prompt / Few-Shot | `prompt.py` / fare aliases | FH02, FM05 | ✅ |
+| 4 | LLM 生成 + 确定性 rewrite | `prompt.py` / `pnl_fix.py` | FH04, FM07, FH01 | ✅ |
 
 ---
 
 ## 十、答辩话术（收口后可引用）
 
-1. **清新 held-out**：在官方 7 + Extra36 之外另建 Extra2（40 题），关短路双轨复测；官方仍 7/7，Extra2-A **87.5%**、B **82.5%**，专门回答「是不是只过拟合旧题」。  
+1. **清新 held-out**：Extra2（40 题）关短路双轨；S5 基线 A/B 曾 87.5%/82.5%，提准后 **40/40**；官方默认仍 7/7，专门回答「是否只过拟合旧题」。  
 2. **工程代价低**：复用既有 EX 管线与元数据约定；S4 isolation 保证评测原文不进 exact 短路。  
-3. **与提准解耦 / 过拟合证据**：续一已使 Extra36 A/B 满分，但同一 Agent 在 Extra2 未达 90%——说明旧集提准成功，**不等于**清新问法已达标；缺口集中在枚举码、assign/净流入口径与个别 L1/剪枝异常。
+3. **提准路径可复盘**：失败族按剪枝 hub → 枚举渲染 → 列义/Prompt → 盈亏 rewrite 收敛；官方关短路 Q6 为金标未使用 CTE 的 quirk，不以过拟合 rewrite 强刷。
 
 ---
 

@@ -60,6 +60,9 @@ class MetadataBundle:
                 value_text = self.values.format_static_for_prompt(col.enum_ref)
                 if value_text:
                     lines.append(f"    枚举: {value_text}")
+            elif include_values and col.enum_values:
+                pairs = ", ".join(f"{k}={v}" for k, v in col.enum_values.items())
+                lines.append(f"    枚举: {col.name}: {pairs}")
         return "\n".join(lines)
 
     def format_schema_for_tables(self, table_names: list[str], *, include_values: bool = True) -> str:

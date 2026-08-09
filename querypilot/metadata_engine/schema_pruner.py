@@ -64,6 +64,9 @@ _FACT_TABLES = frozenset(
     }
 )
 
+# Org dim alone does not trigger fact-hub injection; customer+branch still needs ads.
+_ORG_DIM_TABLES = frozenset({"dim_branch"})
+
 _CUSTOMER_CUES = ("客户", "人群", "用户", "投资者")
 
 _DEFAULT_FALLBACK_TABLE = "ads_cust_info_d"
@@ -310,12 +313,13 @@ def _alias_stems(alias: str) -> list[str]:
 
 
 def _ensure_customer_hub(seeds: list[str], search_text: str) -> list[str]:
-    """If a fact table is selected and the question talks about customers, keep the hub table."""
+    """Keep customer hub when NL mentions customers and seeds are facts or org dims."""
     if "ads_cust_info_d" in seeds:
         return seeds
     mentions_customer = any(cue in search_text for cue in _CUSTOMER_CUES)
     has_fact = any(name in _FACT_TABLES for name in seeds)
-    if mentions_customer and has_fact:
+    has_org_dim = any(name in _ORG_DIM_TABLES for name in seeds)
+    if mentions_customer and (has_fact or has_org_dim):
         return ["ads_cust_info_d", *seeds]
     return seeds
 
