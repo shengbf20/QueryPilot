@@ -6,6 +6,9 @@ primary_key: [prdt_id]
 usage:
   - 产品名称查询与产品分类筛选
   - 与持仓/交易表通过 prdt_id 关联
+notes:
+  - prdt_type_name 为二级分类（如 科创板、A股）；up_prdt_type_name 为一级大类；股票一级类 up_prdt_type_id 常为 PT040000
+  - 按证券名称过滤用 prdt_name（如 招商银行、中国平安、比亚迪），必须 JOIN 本表，勿臆造 prdt_id
 columns:
   - name: prdt_id
     type: VARCHAR

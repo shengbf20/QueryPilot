@@ -12,6 +12,8 @@ def test_load_metadata_structure():
     assert set(metadata.tables.keys()) == set(EXPECTED_TABLES)
     assert len(metadata.join_graph.edges) == 12
     assert metadata.engine is not None
+    assert len(metadata.metrics) >= 5
+    assert any(m.id == "total_aset" for m in metadata.metrics)
 
 
 def test_get_table_and_expand():

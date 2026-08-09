@@ -14,6 +14,7 @@ from querypilot.metadata_engine.loader import (
     load_all_tables,
     load_table_meta,
 )
+from querypilot.metadata_engine.metrics import MetricDef, load_metrics, metrics_for_tables
 from querypilot.metadata_engine.metadata_validator import (
     MetadataValidationResult,
     validate_metadata_all,
@@ -58,6 +59,9 @@ __all__ = [
     "load_value_descriptor_config",
     "load_value_descriptors",
     "load_join_graph",
+    "MetricDef",
+    "load_metrics",
+    "metrics_for_tables",
     "JoinGraphEngine",
     "JoinPlan",
     "ResolvedPath",

@@ -85,6 +85,8 @@ def test_system_prompt_hard_rules():
     assert "city_name" in SYSTEM_PROMPT
     assert "YYYYMMDD" in SYSTEM_PROMPT
     assert "MAX(data_dt)" in SYSTEM_PROMPT or "MAX" in SYSTEM_PROMPT
+    assert "[60,)" in SYSTEM_PROMPT
+    assert "prdt_type_name" in SYSTEM_PROMPT
 
 
 def test_load_few_shots_has_examples():

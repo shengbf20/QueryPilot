@@ -11,6 +11,7 @@ from querypilot.metadata_engine.join_graph import JoinGraphEngine, JoinPlan, cre
 from querypilot.metadata_engine.join_graph_loader import JoinGraph, load_join_graph
 from querypilot.metadata_engine.loader import load_all_tables
 from querypilot.metadata_engine.metadata_validator import MetadataValidationResult, validate_metadata_all
+from querypilot.metadata_engine.metrics import MetricDef, load_metrics
 from querypilot.metadata_engine.models import TableMeta
 from querypilot.metadata_engine.value_descriptors import (
     ValueDescriptorRegistry,
@@ -27,6 +28,7 @@ class MetadataBundle:
     values: ValueDescriptorRegistry
     join_graph: JoinGraph
     engine: JoinGraphEngine
+    metrics: list[MetricDef]
 
     def get_table(self, name: str) -> TableMeta:
         if name not in self.tables:
@@ -76,6 +78,7 @@ def load_metadata(
     tables_dir: Path | None = None,
     join_graph_path: Path | None = None,
     value_config_path: Path | None = None,
+    metrics_path: Path | None = None,
     load_db_codes: bool = True,
     db_con: duckdb.DuckDBPyConnection | None = None,
 ) -> MetadataBundle:
@@ -83,6 +86,7 @@ def load_metadata(
     tables = load_all_tables(tables_dir)
     join_graph = load_join_graph(join_graph_path)
     values = load_value_descriptor_config(value_config_path)
+    metrics = load_metrics(metrics_path)
 
     if load_db_codes:
         if db_con is not None:
@@ -102,4 +106,5 @@ def load_metadata(
         values=values,
         join_graph=join_graph,
         engine=engine,
+        metrics=metrics,
     )

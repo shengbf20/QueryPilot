@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 
 from querypilot.metadata_engine.bundle import MetadataBundle
 from querypilot.metadata_engine.join_graph import JoinPlan
+from querypilot.metadata_engine.metrics import metrics_for_tables
 from querypilot.metadata_engine.models import ColumnMeta, TableMeta
 
 # Soft query expansions for common marketing phrasings (trigger -> extra search terms).
@@ -420,4 +421,10 @@ def _collect_notes(metadata: MetadataBundle, tables: list[str]) -> list[str]:
             if note not in seen:
                 notes.append(note)
                 seen.add(note)
+
+    for metric in metrics_for_tables(getattr(metadata, "metrics", []) or [], tables):
+        line = metric.format_for_prompt()
+        if line not in seen:
+            notes.append(line)
+            seen.add(line)
     return notes

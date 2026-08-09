@@ -7,9 +7,13 @@
 
 join_rules:
   - id: no_default_data_dt
-    description: 客户信息表与事实表/营业部表 data_dt 不对齐，跨表 Join 默认仅使用业务键（pty_id / org_id），不要默认加 data_dt 条件
+    description: 客户信息表与事实表/营业部表 data_dt 不对齐，跨表 Join 默认仅使用业务键（pty_id / org_id），不要默认加 data_dt 条件；事实表日期用 WHERE 单独过滤
   - id: dim_public_lookup
     description: 关联 dim_public 时必须加 filter.code_type_id，且 join 列必须是 ads_cust_info_d 中的编码字段
+  - id: snapshot_vs_latest
+    description: 题目指明季度末/某日时用固定快照（26年Q1末→20260331）；仅当题目明确要求「最新」时才用 MAX(data_dt)
+  - id: product_type_level
+    description: 科创板/A股等板块或产品类型过滤用 dim_product.prdt_type_name（二级）；产品大类用 up_prdt_type_name（一级），二者勿混用
 
 tables:
   ads_cust_info_d:
