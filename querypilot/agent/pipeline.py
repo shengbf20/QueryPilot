@@ -10,6 +10,13 @@ from openai import OpenAI
 from querypilot.agent.models import PipelineResult, StageTiming
 from querypilot.agent.sql_generator import generate_sql
 from querypilot.cache.metadata_cache import get_metadata, get_pruned_schema
+from querypilot.cache.query_cache import (
+    CachedQuery,
+    get_cached_query,
+    make_query_key,
+    put_cached_query,
+)
+from querypilot.config import get_settings
 from querypilot.db import execute
 from querypilot.metadata_engine.bundle import MetadataBundle
 from querypilot.safety.l1_ast import guard_sql
@@ -19,6 +26,12 @@ from querypilot.safety.result_probe import probe_result
 
 def _elapsed_ms(start: float) -> float:
     return (time.perf_counter() - start) * 1000.0
+
+
+def _resolve_cache_rows(cache_rows: bool | None) -> bool:
+    if cache_rows is not None:
+        return bool(cache_rows)
+    return bool(get_settings().cache_rows)
 
 
 def ask(
@@ -32,10 +45,12 @@ def ask(
     include_values: bool = True,
     allow_exact_few_shot: bool = True,
     use_cache: bool | None = None,
+    cache_rows: bool | None = None,
 ) -> PipelineResult:
     """Run the full QueryPilot retrieval pipeline for one natural-language question."""
     t_all = time.perf_counter()
     timing = StageTiming()
+    want_rows = _resolve_cache_rows(cache_rows)
 
     q = question.strip()
     if not q:
@@ -47,6 +62,26 @@ def ask(
             message="问题不能为空",
             stage="prune",
             timing=timing,
+        )
+
+    cache_key = make_query_key(
+        q,
+        max_rows=max_rows,
+        max_few_shots=max_few_shots,
+        include_values=include_values,
+        allow_exact_few_shot=allow_exact_few_shot,
+        cache_rows=want_rows,
+    )
+    cached = get_cached_query(cache_key, use_cache=use_cache)
+    if cached is not None and cached.sql:
+        return _finish_from_cache(
+            q,
+            cached,
+            timing=timing,
+            t_all=t_all,
+            con=con,
+            max_rows=max_rows,
+            want_rows=want_rows,
         )
 
     md = metadata or get_metadata(load_db_codes=include_values, use_cache=use_cache)
@@ -172,7 +207,7 @@ def ask(
             message = message + " " + " / ".join(probe.suggestions)
 
     timing.total_ms = _elapsed_ms(t_all)
-    return PipelineResult(
+    result = PipelineResult(
         ok=True,
         question=q,
         sql=sql,
@@ -193,5 +228,107 @@ def ask(
             "uses_cte": gen.uses_cte,
             "l1_fixes": [f"{f.original}->{f.fixed}" for f in l1.fixes],
             "probe_code": probe.code,
+        },
+    )
+
+    # Only cache successful, non-degraded fence-approved paths
+    entry = CachedQuery(
+        sql=sql,
+        tables=list(allowed),
+        rationale=gen.rationale,
+        uses_cte=bool(gen.uses_cte),
+        columns=list(data.columns) if want_rows else [],
+        rows=list(data.rows) if want_rows else [],
+        row_count=data.row_count if want_rows else 0,
+        has_rows=want_rows,
+    )
+    put_cached_query(cache_key, entry, use_cache=use_cache)
+    return result
+
+
+def _finish_from_cache(
+    question: str,
+    cached: CachedQuery,
+    *,
+    timing: StageTiming,
+    t_all: float,
+    con: duckdb.DuckDBPyConnection | None,
+    max_rows: int,
+    want_rows: bool,
+) -> PipelineResult:
+    """Replay fence-approved SQL: optional cached rows, else re-execute + probe."""
+    timing.cache_hit = True
+    sql = cached.sql
+    tables = list(cached.tables)
+
+    if want_rows and cached.has_rows:
+        timing.execute_ms = 0.0
+        timing.probe_ms = 0.0
+        timing.total_ms = _elapsed_ms(t_all)
+        return PipelineResult(
+            ok=True,
+            question=question,
+            sql=sql,
+            rationale=cached.rationale,
+            tables=tables,
+            columns=list(cached.columns),
+            rows=list(cached.rows),
+            row_count=cached.row_count,
+            degraded=False,
+            message="ok (cache)",
+            stage="done",
+            timing=timing,
+            extras={"uses_cte": cached.uses_cte, "cache": "rows"},
+        )
+
+    t0 = time.perf_counter()
+    try:
+        data = execute(sql, con=con, max_rows=max_rows)
+    except Exception as exc:  # noqa: BLE001
+        timing.execute_ms = _elapsed_ms(t0)
+        timing.total_ms = _elapsed_ms(t_all)
+        return PipelineResult(
+            ok=False,
+            question=question,
+            sql=sql,
+            rationale=cached.rationale,
+            tables=tables,
+            degraded=True,
+            message=f"SQL 执行失败: {exc}",
+            stage="execute",
+            timing=timing,
+            extras={"cache": "sql"},
+        )
+    timing.execute_ms = _elapsed_ms(t0)
+
+    t0 = time.perf_counter()
+    probe = probe_result(question, data, sql=sql)
+    timing.probe_ms = _elapsed_ms(t0)
+    message = "ok"
+    if probe.triggered:
+        message = probe.message
+        if probe.suggestions:
+            message = message + " " + " / ".join(probe.suggestions)
+
+    timing.total_ms = _elapsed_ms(t_all)
+    return PipelineResult(
+        ok=True,
+        question=question,
+        sql=sql,
+        rationale=cached.rationale,
+        tables=tables,
+        columns=list(data.columns),
+        rows=list(data.rows),
+        row_count=data.row_count,
+        degraded=False,
+        message=message,
+        probe_message=probe.message if probe.triggered else "",
+        probe_suggestions=list(probe.suggestions),
+        stage="done",
+        timing=timing,
+        extras={
+            "uses_cte": cached.uses_cte,
+            "probe_code": probe.code,
+            "cache": "sql",
         },
     )

@@ -33,6 +33,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=3,
         help="Max few-shot examples in the prompt (default: 3)",
     )
+    ask_parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Disable metadata/prune/query caches for this ask",
+    )
+    ask_parser.add_argument(
+        "--cache-rows",
+        action="store_true",
+        help="Also cache result rows (demo/bench; default off)",
+    )
 
     eval_parser = sub.add_parser("eval", help="Run Execution Match eval on gold Q&A cases")
     eval_parser.add_argument(
@@ -170,7 +180,7 @@ def format_pipeline_result(result: PipelineResult, *, max_print_rows: int = 20) 
         "timing_ms: "
         f"total={t.total_ms:.1f} prune={t.prune_ms:.1f} generate={t.generate_ms:.1f} "
         f"l1={t.l1_ms:.1f} l2={t.l2_ms:.1f} execute={t.execute_ms:.1f} "
-        f"probe={t.probe_ms:.1f} cache_hit={t.cache_hit}"
+        f"probe={t.probe_ms:.1f} cache_hit={'yes' if t.cache_hit else 'no'}"
     )
     if result.sql:
         lines.append("sql:")
@@ -237,6 +247,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             question,
             max_rows=args.max_rows,
             max_few_shots=args.max_few_shots,
+            use_cache=False if args.no_cache else None,
+            cache_rows=True if args.cache_rows else None,
         )
         print(format_pipeline_result(result, max_print_rows=args.max_rows))
         return 0 if result.ok else 1

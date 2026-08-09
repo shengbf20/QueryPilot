@@ -91,9 +91,16 @@ def run_bench(
     include_values: bool = True,
     client: Any | None = None,
     metadata: Any | None = None,
+    use_cache: bool | None = None,
+    cache_rows: bool | None = None,
 ) -> dict[str, Any]:
     """Run ask() over questions; optionally warm (repeat each question)."""
-    md = metadata or load_metadata(load_db_codes=include_values)
+    from querypilot.cache import clear_caches
+
+    if use_cache is False:
+        clear_caches()
+
+    md = metadata or load_metadata(load_db_codes=include_values, use_cache=use_cache)
     mode = "warm" if warm else "cold"
     items: list[dict[str, Any]] = []
 
@@ -114,6 +121,8 @@ def run_bench(
                     max_rows=max_rows,
                     max_few_shots=max_few_shots,
                     include_values=include_values,
+                    use_cache=use_cache,
+                    cache_rows=cache_rows,
                 )
                 wall_ms = (time.perf_counter() - t_wall) * 1000.0
                 timing = _timing_dict(result)
@@ -199,10 +208,12 @@ def format_bench_report(report: dict[str, Any]) -> str:
     for it in report.get("items") or []:
         t = it["timing"]
         flag = "OK" if it["ok"] else "FAIL"
+        hit = "yes" if t.get("cache_hit") else "no"
         lines.append(
             f"  [{flag}] {it['mode']} q{it['question_index']} stage={it['stage']} "
             f"total={t['total_ms']:.1f} gen={t['generate_ms']:.1f} "
-            f"l1={t['l1_ms']:.1f} l2={t['l2_ms']:.1f} exec={t['execute_ms']:.1f}"
+            f"l1={t['l1_ms']:.1f} l2={t['l2_ms']:.1f} exec={t['execute_ms']:.1f} "
+            f"cache_hit={hit}"
         )
         q_short = it["question"].replace("\n", " ")[:60]
         lines.append(f"       Q: {q_short}")
@@ -236,6 +247,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-rows", type=int, default=20)
     p.add_argument("--max-few-shots", type=int, default=2)
     p.add_argument("--no-values", action="store_true", help="Skip value descriptors in prune/prompt")
+    p.add_argument("--no-cache", action="store_true", help="Disable all caches (cold-path control)")
+    p.add_argument(
+        "--cache-rows",
+        action="store_true",
+        help="Cache result rows on hit (skip re-execute; demo/bench)",
+    )
     p.add_argument("--output", type=str, default=None, help="JSON report path")
     p.add_argument("--no-save", action="store_true", help="Do not write JSON report")
     return p
@@ -267,6 +284,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_rows=args.max_rows,
         max_few_shots=args.max_few_shots,
         include_values=not args.no_values,
+        use_cache=False if args.no_cache else None,
+        cache_rows=True if args.cache_rows else None,
     )
     print(format_bench_report(report))
 

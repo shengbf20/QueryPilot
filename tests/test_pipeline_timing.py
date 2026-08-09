@@ -99,7 +99,7 @@ def test_format_pipeline_result_includes_timing():
     assert "timing_ms:" in text
     assert "total=111.0" in text
     assert "generate=100.0" in text
-    assert "cache_hit=False" in text
+    assert "cache_hit=no" in text
 
 
 @requires_db

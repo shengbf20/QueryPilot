@@ -635,7 +635,13 @@ def test_main_ask_uses_pipeline(capsys):
     with patch("querypilot.agent.ask", return_value=fake) as mocked:
         code = main(["ask", "客户", "数量", "--max-rows", "5", "--max-few-shots", "2"])
     assert code == 0
-    mocked.assert_called_once_with("客户 数量", max_rows=5, max_few_shots=2)
+    mocked.assert_called_once_with(
+        "客户 数量",
+        max_rows=5,
+        max_few_shots=2,
+        use_cache=None,
+        cache_rows=None,
+    )
     out = capsys.readouterr().out
     assert "SELECT 1 AS n" in out
 

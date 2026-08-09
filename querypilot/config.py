@@ -29,6 +29,10 @@ class Settings:
     deepseek_base_url: str
     deepseek_model: str
     cache_enabled: bool
+    cache_backend: str
+    redis_url: str
+    cache_rows: bool
+    query_cache_maxsize: int
 
 
 def get_settings() -> Settings:
@@ -37,6 +41,10 @@ def get_settings() -> Settings:
         cache_enabled = _env_flag("QUERYPPILOT_CACHE", default=True)
     else:
         cache_enabled = _env_flag("CACHE_ENABLED", default=True)
+    try:
+        maxsize = int(os.getenv("QUERYPPILOT_QUERY_CACHE_MAXSIZE", "256"))
+    except ValueError:
+        maxsize = 256
     return Settings(
         root_dir=ROOT_DIR,
         data_dir=ROOT_DIR / "data",
@@ -46,4 +54,8 @@ def get_settings() -> Settings:
         deepseek_base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
         deepseek_model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
         cache_enabled=cache_enabled,
+        cache_backend=os.getenv("CACHE_BACKEND", "memory").strip().lower() or "memory",
+        redis_url=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
+        cache_rows=_env_flag("QUERYPPILOT_CACHE_ROWS", default=False),
+        query_cache_maxsize=max(1, maxsize),
     )
