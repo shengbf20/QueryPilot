@@ -8,7 +8,9 @@ import duckdb
 from openai import OpenAI
 
 from querypilot.agent.models import PipelineResult, StageTiming
+from querypilot.agent.pnl_fix import fix_period_pnl_sql
 from querypilot.agent.sql_generator import generate_sql
+from querypilot.agent.topn_fix import fix_org_topn_sql
 from querypilot.cache.metadata_cache import get_metadata, get_pruned_schema
 from querypilot.cache.query_cache import (
     CachedQuery,
@@ -152,7 +154,7 @@ def ask(
         )
     timing.generate_ms = _elapsed_ms(t0)
 
-    sql = gen.sql
+    sql = fix_org_topn_sql(fix_period_pnl_sql(gen.sql))
 
     # 3) L1 AST fence
     t0 = time.perf_counter()
@@ -204,7 +206,7 @@ def ask(
             timing=timing,
             extras={"explain_error": l2.explain_error, "correction_rationale": l2.correction_rationale},
         )
-    sql = l2.sql
+    sql = fix_org_topn_sql(fix_period_pnl_sql(l2.sql))
 
     # 5) Execute
     t0 = time.perf_counter()

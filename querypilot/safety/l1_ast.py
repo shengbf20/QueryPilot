@@ -126,11 +126,7 @@ def guard_sql(
             )
 
     cte_names = {cte.alias_or_name for cte in tree.find_all(exp.CTE)}
-    subquery_aliases = _collect_subquery_aliases(tree)
-    # Derived tables / CTEs expose computed columns not in the physical catalog.
-    virtual_relations = cte_names | subquery_aliases
-    physical_tables, alias_map = _collect_tables(tree, cte_names)
-    select_aliases = _collect_select_aliases(tree)
+    physical_tables = _collect_physical_tables(tree, cte_names)
 
     for table in sorted(physical_tables):
         if table not in allow:
@@ -142,26 +138,21 @@ def guard_sql(
             )
 
     if not any(v.code == "dangerous_op" for v in violations):
-        scope_tables = physical_tables & allow if physical_tables else allow
         if auto_fix_columns:
             fixes.extend(
-                _fix_columns(
+                _fix_columns_scoped(
                     tree,
-                    alias_map,
-                    virtual_relations,
+                    cte_names,
                     catalog,
-                    scope_tables,
+                    allow,
                     min_similarity,
-                    select_aliases,
                 )
             )
-        for _col, _table_hint, message in _unknown_columns(
+        for _col, _table_hint, message in _unknown_columns_scoped(
             tree,
-            alias_map,
-            virtual_relations,
+            cte_names,
             catalog,
-            scope_tables,
-            select_aliases,
+            allow,
         ):
             violations.append(GuardViolation("unknown_column", message))
 
@@ -184,45 +175,78 @@ def guard_sql(
     )
 
 
-def _collect_tables(
-    tree: exp.Expression,
-    cte_names: set[str],
-) -> tuple[set[str], dict[str, str]]:
-    """Return physical table names and alias->physical/cte map."""
+def _collect_physical_tables(tree: exp.Expression, cte_names: set[str]) -> set[str]:
+    """Physical base tables referenced anywhere (for allowlist)."""
     physical: set[str] = set()
-    alias_map: dict[str, str] = {}
-
-    for cte in tree.find_all(exp.CTE):
-        alias_map[cte.alias_or_name] = cte.alias_or_name
-
     for table in tree.find_all(exp.Table):
         name = table.name
-        if not name:
-            continue
-        alias = table.alias_or_name or name
-        if name in cte_names:
+        if name and name not in cte_names:
+            physical.add(name)
+    return physical
+
+
+def _enclosing_select(node: exp.Expression) -> exp.Select | None:
+    cur: exp.Expression | None = node
+    while cur is not None:
+        if isinstance(cur, exp.Select):
+            return cur
+        cur = cur.parent
+    return None
+
+
+def _direct_from_sources(select: exp.Select) -> list[exp.Expression]:
+    """Immediate FROM/JOIN sources of a SELECT (not nested subqueries' inners)."""
+    sources: list[exp.Expression] = []
+    from_ = select.args.get("from_")
+    if from_ is not None and from_.this is not None:
+        sources.append(from_.this)
+    for join in select.args.get("joins") or []:
+        if join.this is not None:
+            sources.append(join.this)
+    return sources
+
+
+def _scope_maps(
+    select: exp.Select,
+    cte_names: set[str],
+) -> tuple[dict[str, str], set[str], set[str]]:
+    """Return (alias->relation, physical tables, virtual relation names) for one SELECT."""
+    alias_map: dict[str, str] = {}
+    physical: set[str] = set()
+    virtual: set[str] = set(cte_names)
+
+    for cte_name in cte_names:
+        alias_map[cte_name] = cte_name
+
+    for src in _direct_from_sources(select):
+        if isinstance(src, exp.Table):
+            name = src.name
+            if not name:
+                continue
+            alias = src.alias_or_name or name
+            if name in cte_names:
+                alias_map[alias] = name
+                virtual.add(name)
+                continue
+            physical.add(name)
             alias_map[alias] = name
-            continue
-        physical.add(name)
-        alias_map[alias] = name
-        alias_map[name] = name
+            alias_map[name] = name
+        elif isinstance(src, exp.Subquery):
+            alias = src.alias
+            if alias:
+                alias_map[alias] = alias
+                virtual.add(alias)
 
-    return physical, alias_map
+    return alias_map, physical, virtual
 
 
-def _collect_subquery_aliases(tree: exp.Expression) -> set[str]:
-    """Aliases of derived tables: ``JOIN (SELECT ...) AS b``."""
+def _select_projection_aliases(select: exp.Select) -> set[str]:
+    """Aliases introduced by this SELECT's projection list (ORDER BY etc.)."""
     names: set[str] = set()
-    for sub in tree.find_all(exp.Subquery):
-        alias = sub.alias
-        if alias:
-            names.add(alias)
+    for expr in select.expressions:
+        if isinstance(expr, exp.Alias) and expr.alias:
+            names.add(expr.alias)
     return names
-
-
-def _collect_select_aliases(tree: exp.Expression) -> set[str]:
-    """Names introduced by SELECT ... AS alias (valid in ORDER BY / outer refs)."""
-    return {alias.alias for alias in tree.find_all(exp.Alias) if alias.alias}
 
 
 def _is_select_alias_ref(column: exp.Column, select_aliases: set[str]) -> bool:
@@ -245,70 +269,89 @@ def _candidate_columns(
     return cols
 
 
-def _fix_columns(
-    tree: exp.Expression,
-    alias_map: dict[str, str],
-    virtual_relations: set[str],
+def _resolve_column_scope(
+    column: exp.Column,
+    cte_names: set[str],
     catalog: dict[str, set[str]],
-    scope_tables: set[str],
+    allow: set[str],
+) -> tuple[str | None, set[str], bool]:
+    """Return (resolved_table_or_None, candidate_cols, skip_catalog_check).
+
+    ``skip_catalog_check`` is True for CTE/subquery-qualified refs and projection aliases.
+    """
+    select = _enclosing_select(column)
+    if select is None:
+        return None, set(), False
+
+    alias_map, physical, virtual = _scope_maps(select, cte_names)
+    select_aliases = _select_projection_aliases(select)
+    if _is_select_alias_ref(column, select_aliases):
+        return None, set(), True
+
+    table_ref = column.table or None
+    if table_ref and table_ref in virtual:
+        return table_ref, set(), True
+    resolved = alias_map.get(table_ref, table_ref) if table_ref else None
+    if resolved in virtual:
+        return resolved, set(), True
+
+    scope_tables = physical & allow if physical else set()
+    candidates = _candidate_columns(catalog, scope_tables, resolved)
+    return resolved, candidates, False
+
+
+def _fix_columns_scoped(
+    tree: exp.Expression,
+    cte_names: set[str],
+    catalog: dict[str, set[str]],
+    allow: set[str],
     min_similarity: float,
-    select_aliases: set[str],
 ) -> list[ColumnFix]:
     fixes: list[ColumnFix] = []
     for column in tree.find_all(exp.Column):
         col_name = column.name
         if not col_name or col_name == "*":
             continue
-        if _is_select_alias_ref(column, select_aliases):
+        resolved, candidates, skip = _resolve_column_scope(
+            column, cte_names, catalog, allow
+        )
+        if skip or not candidates or col_name in candidates:
             continue
-
-        table_ref = column.table or None
-        if table_ref and table_ref in virtual_relations:
-            continue
-        resolved = alias_map.get(table_ref, table_ref) if table_ref else None
-        if resolved in virtual_relations:
-            continue
-
-        candidates = _candidate_columns(catalog, scope_tables, resolved)
-        if not candidates:
-            continue
-        if col_name in candidates:
-            continue
-
-        match = difflib.get_close_matches(col_name, sorted(candidates), n=1, cutoff=min_similarity)
+        match = difflib.get_close_matches(
+            col_name, sorted(candidates), n=1, cutoff=min_similarity
+        )
         if not match:
             continue
-
         fixed = match[0]
-        column.set("this", exp.to_identifier(fixed, quoted=column.this.quoted if column.this else False))
+        column.set(
+            "this",
+            exp.to_identifier(
+                fixed, quoted=column.this.quoted if column.this else False
+            ),
+        )
         fixes.append(ColumnFix(original=col_name, fixed=fixed, table=resolved))
     return fixes
 
 
-def _unknown_columns(
+def _unknown_columns_scoped(
     tree: exp.Expression,
-    alias_map: dict[str, str],
-    virtual_relations: set[str],
+    cte_names: set[str],
     catalog: dict[str, set[str]],
-    scope_tables: set[str],
-    select_aliases: set[str],
+    allow: set[str],
 ) -> list[tuple[str, str | None, str]]:
-    """Return remaining unknown columns after fuzzy fixes."""
+    """Return remaining unknown columns after fuzzy fixes (scope-aware)."""
     unknown: list[tuple[str, str | None, str]] = []
     for column in tree.find_all(exp.Column):
         col_name = column.name
         if not col_name or col_name == "*":
             continue
-        if _is_select_alias_ref(column, select_aliases):
+        resolved, candidates, skip = _resolve_column_scope(
+            column, cte_names, catalog, allow
+        )
+        if skip:
             continue
-        table_ref = column.table or None
-        if table_ref and table_ref in virtual_relations:
-            continue
-        resolved = alias_map.get(table_ref, table_ref) if table_ref else None
-        if resolved in virtual_relations:
-            continue
-        candidates = _candidate_columns(catalog, scope_tables, resolved)
         if not candidates:
+            # Unqualified / empty local FROM: nothing to validate against.
             continue
         if col_name in candidates:
             continue

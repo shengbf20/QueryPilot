@@ -299,6 +299,44 @@ def test_order_by_unknown_non_alias_still_blocked(metadata):
     )
 
 
+def test_cte_outer_alias_not_collapsed_by_inner_same_alias(metadata):
+    """Outer JOIN hold h must not inherit inner dwd_cust_hold_d h alias (H02)."""
+    sql = """
+    WITH hold AS (
+      SELECT h.pty_id, p.up_prdt_type_name, p.prdt_type_name, SUM(h.mkt_val) AS mkt_val
+      FROM dwd_cust_hold_d AS h
+      JOIN dim_product AS p ON h.prdt_id = p.prdt_id
+      WHERE h.data_dt = '20260331'
+      GROUP BY h.pty_id, p.up_prdt_type_name, p.prdt_type_name
+    )
+    SELECT h.up_prdt_type_name, h.prdt_type_name, SUM(h.mkt_val) AS mkt_val
+    FROM hold AS h
+    GROUP BY h.up_prdt_type_name, h.prdt_type_name
+    ORDER BY h.up_prdt_type_name, h.prdt_type_name
+    """
+    allowed = {"dwd_cust_hold_d", "dim_product"}
+    result = guard_sql(sql, metadata=metadata, allowed_tables=allowed)
+    assert result.ok, result.violations
+    assert not any(v.code == "unknown_column" for v in result.violations)
+
+
+def test_physical_alias_still_blocks_product_cols_on_hold(metadata):
+    """True hallucination: product columns on dwd_cust_hold_d must still fail."""
+    sql = """
+    SELECT h.up_prdt_type_name, h.prdt_type_name
+    FROM dwd_cust_hold_d AS h
+    WHERE h.data_dt = '20260331'
+    """
+    result = guard_sql(
+        sql,
+        metadata=metadata,
+        allowed_tables={"dwd_cust_hold_d"},
+        auto_fix_columns=False,
+    )
+    assert not result.ok
+    assert any(v.code == "unknown_column" for v in result.violations)
+
+
 # ---------------------------------------------------------------------------
 # Live: generated SQL should pass L1
 # ---------------------------------------------------------------------------

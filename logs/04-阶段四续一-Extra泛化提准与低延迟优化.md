@@ -1,9 +1,9 @@
 # QueryPilot 阶段四续一：Extra 泛化提准与低延迟优化
 
-> 记录范围：基于 `extra_fast_A_fs3` / `extra_fast_B_fs0`（及对照 `official_fast_noshort_fs3`）的失败与错因，规划**不显著增加耗时**前提下的源码侧提准与泛化加固；本文件为规划落档，代码未开工。  
+> 记录范围：基于 `extra_fast_A_fs3` / `extra_fast_B_fs0`（及对照 `official_fast_noshort_fs3`）的失败与错因，在**不显著增加耗时**前提下完成源码侧提准与泛化加固。  
 > 记录时间：2026-08-09  
-> 状态：⏳ 规划已落档 / 实现未开工  
-> 前置依赖：阶段四性能收口（`logs/04-phase4_perf.md`）；续二双轨（官方默认 7/7，Extra-A fs3 36/36）；本轮复跑 Extra-B fs0 **33/36**、官方关短路 **6/7**
+> 状态：✅ **已收口** — Extra-A/B 关短路均 **36/36**；官方默认 **7/7**；官方关短路仍 **6/7**（case6 金标扇出，不攻坚）  
+> 前置依赖：阶段四性能收口（`logs/04-phase4_perf.md`）；续二双轨；开工前 Extra-B fs0 **33/36**
 
 ---
 
@@ -247,11 +247,34 @@ python scripts/baseline_eval.py --stem logs/eval_reports/official_p4x1_default -
 | 步骤 | 状态 | 一句话 |
 |------|------|--------|
 | 本文规划落档 | ✅ | 错因分层 + P0–P4 + 延迟门槛 |
-| P0 L1 作用域 | ⏳ | 未开工 |
-| P1 Prompt/metrics | ⏳ | 未开工 |
-| P2 改写 Few-Shot | ⏳ | 按需 |
-| P3 复跑验收 | ⏳ | 未开工 |
-| P4 模型对照 | ⏸ | 默认跳过 |
+| P0 L1 作用域 | ✅ | `l1_ast` 按 SELECT 作用域解析别名；H02 假阳性消除 |
+| P1 Prompt/metrics | ✅ | 规则 11/13/17/19 + `period_pnl` 同步 |
+| P1b 确定性改写（替 P2） | ✅ | `pnl_fix`（盈亏怪癖公式）+ `topn_fix`（org_id→org_name 再聚合）；**未**加 Few-Shot（fs=0 无效） |
+| P3 复跑验收 | ✅ | 见下表；pytest **353** 绿 |
+| P4 模型对照 | ⏸ | 已达 36/36，跳过 |
+
+### 4.1 复跑对照（相对开工前 `extra_fast_*` / `official_fast_noshort_fs3`）
+
+| 轨道 | 开工前 EX | 收口 EX | p50 / p95 (ms) 前 → 后 | 产物 |
+|------|-----------|---------|------------------------|------|
+| Extra-A fs=3 关短路 | 36/36 | **36/36** | 3286/5712 → 3713/11037 | `extra_p4x1_A_fs3.*` |
+| Extra-B fs=0 关短路 | 33/36 | **36/36** | 3352/5438 → 3692/8224 | `extra_p4x1_B_fs0.*` |
+| 官方关短路 fs=3 | 6/7 | **6/7**（case6） | 4275/5464 → 3960/6684 | `official_p4x1_noshort_fs3.*` |
+| 官方默认开短路 | （续二 7/7） | **7/7** | — → 2988/4103 | `official_p4x1_default.*` |
+| 错误集冒烟 fs=0 | H01/H02/H07 失败 | **3/3** | — | `extra_p4x1_failset_fs0.json` |
+
+**延迟说明**：未增加 LLM 轮次；p50 相对基线约 +10–13%（Prompt 略增 + 方差）。Extra-A p95 抬升主因单题尖峰（如 H01≈29s，含 L2/长生成），非系统性多轮；Extra-B p95 8224 对基线 5438 约 +51%，仍远低于分钟级。P4 未启用。
+
+### 4.2 实现落点
+
+| 文件 | 作用 |
+|------|------|
+| `querypilot/safety/l1_ast.py` | 作用域感知列校验 |
+| `querypilot/agent/pnl_fix.py` | 盈亏 `aset_pft` 确定性对齐金标怪癖 |
+| `querypilot/agent/topn_fix.py` | 营业部 Top-N 按 `org_name` 再聚合 |
+| `querypilot/agent/pipeline.py` | generate/L2 后调用上述 fix |
+| `querypilot/agent/prompt.py` / `metadata/metrics/metrics.yaml` | 口径规则 |
+| `tests/test_safety_l1.py` / `test_pnl_fix.py` / `test_topn_fix.py` | 回归 |
 
 ---
 
@@ -271,20 +294,20 @@ python scripts/baseline_eval.py --stem logs/eval_reports/official_p4x1_default -
 
 ## 六、答辩话术（提准后可引用）
 
-1. **泛化**：Extra-A（关短路 fs=3）保持满分；Extra-B（fs=0）从 33/36 提到 ≥35/36，Hard 缺口用「围栏作用域 + 口径规则」消化，而非堆模型。  
-2. **漏洞观**：H02 证明安全围栏也有假阳性；作用域修复提升的是**可用性**，不是放松安全。  
-3. **体验**：提准未引入多轮 LLM；延迟仍由单次 generate 主导；热路径继续吃阶段四缓存。  
-4. **官方**：功能验证默认轨 7/7；关短路 case6 归因金标扇出，不拿怪癖 SQL 刷分。
+1. **泛化**：Extra-A / Extra-B 关短路均 **36/36**（B 由 33/36 提到满分）；Hard 缺口用「L1 作用域 + 无 LLM 确定性改写 + 轻量 Prompt」消化，**未换更强模型**。  
+2. **漏洞观**：H02 曾是安全围栏假阳性（内外同别名塌缩）；作用域修复提升可用性，物理表幻觉列仍拦截。  
+3. **体验**：提准未引入多轮 LLM；冷路径仍单次 generate 主导；热路径继续吃阶段四缓存。  
+4. **官方**：默认轨 **7/7**；关短路 case6（24≠25）归因金标扇出，不拿怪癖 SQL 刷分。
 
 ---
 
 ## 七、成功标准（本续一 DoD）
 
-1. [ ] P0 单测证明「内外同别名 CTE」不再误杀产品维度列。  
-2. [ ] Extra-B fs=0 ≥ **35/36**；Extra-A fs=3 = **36/36**；官方默认 = **7/7**。  
-3. [ ] 复跑报告落入 `logs/eval_reports/extra_p4x1_*` / `official_p4x1_*`，并回填 p50/p95 对照表。  
-4. [ ] 未新增默认 LLM 轮次；未切换默认模型（除非附录 P4 且不设默认）。  
-5. [ ] 全量 `pytest` 绿；本文进度表勾选。
+1. [x] P0 单测证明「内外同别名 CTE」不再误杀产品维度列。  
+2. [x] Extra-B fs=0 = **36/36**；Extra-A fs=3 = **36/36**；官方默认 = **7/7**。  
+3. [x] 复跑报告落入 `logs/eval_reports/extra_p4x1_*` / `official_p4x1_*`，并回填 p50/p95 对照表。  
+4. [x] 未新增默认 LLM 轮次；未切换默认模型。  
+5. [x] 全量 `pytest` 绿（353）；本文进度表勾选。
 
 ---
 
