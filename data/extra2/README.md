@@ -30,10 +30,18 @@
 
 规划见 `logs/04-阶段四续二-Extra2清新泛化评测集.md`。
 
-## 重建
+## 重建与评测
 
 ```powershell
 $env:PYTHONPATH="."
 python data/extra2/_explore.py
 python data/extra2/_build_extra2.py
+python -m pytest tests/test_extra2_isolation.py -q
+
+# Extra2-A / B（关短路）+ 官方默认回归
+python scripts/baseline_eval.py --path "data/extra2/Q&A_all.xlsx" --no-exact-few-shot --max-few-shots 3 --stem logs/eval_reports/extra2_A_fs3 --no-llm-diagnose
+python scripts/baseline_eval.py --path "data/extra2/Q&A_all.xlsx" --no-exact-few-shot --max-few-shots 0 --stem logs/eval_reports/extra2_B_fs0 --no-llm-diagnose
+python scripts/baseline_eval.py --stem logs/eval_reports/official_p4x2_default --no-llm-diagnose
 ```
+
+本轮（2026-08-09）结果摘要：Extra2-A **35/40**，Extra2-B **33/40**，官方默认 **7/7**。

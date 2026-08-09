@@ -2,8 +2,8 @@
 
 > 记录范围：在**不改**官方 `data/Q&A.xlsx`、**不改**既有 Extra36（`data/extra/`）前提下，新建约 **40** 道 held-out 金标（Extra2），用于**清新**评估当前 Agent 同库泛化；本文为从命题 → 金标 → 评测检验的可执行 SOP。  
 > 记录时间：2026-08-09  
-> 状态：⏳ **S1–S3 已完成**（40 题金标校验①通过并落盘 xlsx）；S4 isolation / S5 全量评测未开工  
-> 前置依赖：Extra36 闭环（`logs/03-阶段三续二-*.md`）；评测管线（`load_qa_cases` / `baseline_eval`）；可选对照基线 `extra_fast_A_fs3` / `extra_fast_B_fs0`；与续一（`logs/04-阶段四续一-*.md` 提准）**解耦**——本续二以造题+评测为主，默认不改 Pipeline
+> 状态：✅ **S1–S6 已完成** — Extra2-A **35/40（87.5%）**；Extra2-B **33/40（82.5%）**；官方默认 **7/7**；isolation 绿；S6 深度归因见 `logs/eval_reports/extra2_fail_summary.md`。S7 形式收口可选  
+> 前置依赖：Extra36 闭环（`logs/03-阶段三续二-*.md`）；评测管线（`load_qa_cases` / `baseline_eval`）；评测时 Agent 已含续一收口（Extra36 A/B 曾 36/36）
 
 ---
 
@@ -427,10 +427,10 @@ S7  本文勾选收口；数字回填 §九
 | S1 矩阵/去重清单 | ✅ | `data/extra2/dedupe_checklist.md`；与官方/Extra36/few-shot 55 条占用问句比对 |
 | S2 探数 entities | ✅ | `_explore.py` + `entities.md`；assign 全库为 0 → FM08 冻结为 cnt=0 |
 | S3 命题+金标 SQL | ✅ | 12+16+12；`_build_extra2.py` 40/40 可执行；问句去重通过 |
-| S4 xlsx + isolation | ⏳ | xlsx 已由 S3 顺带写出；isolation 单测未开工 |
-| S5 Extra2-A/B + 官方回归 | ⏳ | 未开工 |
-| S6 归因摘要 / candidates | ⏳ | 未开工 |
-| S7 收口勾选 | ⏳ | 未开工 |
+| S4 xlsx + isolation | ✅ | `tests/test_extra2_isolation.py` 3 passed；eval 相关 pytest 42 passed |
+| S5 Extra2-A/B + 官方回归 | ✅ | A 35/40；B 33/40；官方 7/7；报告见 `logs/eval_reports/extra2_*` |
+| S6 归因摘要 / candidates | ✅ | `logs/eval_reports/extra2_fail_summary.md`；主责=剪枝×L1 允许表 + 元数据/Prompt；未回流 candidates |
+| S7 收口勾选 | ⏳ | 主数字与归因已齐；形式 DoD 勾选可随后 |
 
 ### S3 造题摘记（2026-08-09）
 
@@ -441,6 +441,17 @@ S7  本文勾选收口；数字回填 §九
 | 去重 | 与占用问句全文 0 冲突 |
 | 主实体换批 | 销户/南京市/金卡女/南方天天利/江特电机/特变电工/利欧股份/`002131`；盈亏客群=白金×创业板 |
 | 重建命令 | `PYTHONPATH=. python data/extra2/_build_extra2.py` |
+
+### S4–S5 摘记（2026-08-09）
+
+| 项 | 结果 |
+|----|------|
+| Isolation | Extra2 exact few-shot 全 miss；与 Extra36 问句无交集；40 题 id/难度形状正确 |
+| 冒烟 | `extra2_smoke_A` limit=3 可写报告（加载 OK） |
+| Extra2-A | **35/40 = 87.5%**（易 10/12 · 中 15/16 · 难 10/12）；p50/p95 ≈ 3169 / 5700 ms |
+| Extra2-B | **33/40 = 82.5%**（易 11/12 · 中 13/16 · 难 9/12）；p50/p95 ≈ 3533 / 7464 ms |
+| 官方默认 | **7/7 = 100%** |
+| 对照结论 | Extra36 满分 ≠ Extra2 满分 → **旧集过拟合风险被清新集证实**；未改 Agent 刷分 |
 
 ---
 
@@ -465,35 +476,49 @@ S7  本文勾选收口；数字回填 §九
 
 | 项 | 值 |
 |----|-----|
-| 日期 | |
-| git short SHA | |
-| 模型 | |
-| 是否含续一 P0/P1/P2 | |
-| `examples.yaml` 条数 | |
-| DuckDB 路径 | |
+| 日期 | 2026-08-09 |
+| git short SHA | `7bfa07b` |
+| 模型 | `deepseek-chat` |
+| 是否含续一 P0/P1/P2 | **是**（续一日志已收口 Extra36 A/B 36/36） |
+| `examples.yaml` 条数 | 15 |
+| DuckDB 路径 | `db/competition.duckdb` |
 
 ### 9.2 结果表
 
 | 轨道 | 产物 | EX | by_difficulty | p50 / p95 total_ms | 失败 id |
 |------|------|----|---------------|--------------------|---------|
-| Extra2-A fs3 | `extra2_A_fs3.*` | | | | |
-| Extra2-B fs0 | `extra2_B_fs0.*` | | | | |
-| 官方默认 | `official_p4x2_default.*` | | | | |
-| （可选）Extra36-A | | | | | |
+| Extra2-A fs3 | `extra2_A_fs3.*` | **35/40 = 87.5%** | 易 83.3% · 中 93.8% · 难 83.3% | 3169 / 5700 | FE01, FE09, FM08, FH02, FH04 |
+| Extra2-B fs0 | `extra2_B_fs0.*` | **33/40 = 82.5%** | 易 91.7% · 中 81.3% · 难 75.0% | 3533 / 7464 | FE09, FM05, FM07, FM08, FH02, FH04, FH12 |
+| 官方默认 | `official_p4x2_default.*` | **7/7 = 100%** | — | 3670 / 4981 | — |
+| （可选）Extra36-A | 未本轮复跑 | 续一收口曾 **36/36** | — | — | — |
 
-### 9.3 对照解读（填空）
+### 9.3 对照解读
 
-- Extra36-A vs Extra2-A：  
-- Extra2-A vs Extra2-B 差距：  
-- 主要失败族（围栏 / 口径 / Top-N / 剪枝 / 金标）：  
+- **Extra36-A vs Extra2-A**：旧集关短路满分（36/36）→ 清新集 **87.5%**，差距约 12.5pt，说明对 Extra36/改写样例存在**同库过拟合**，不能外推为开放问法已满。
+- **Extra2-A vs Extra2-B**：87.5% → 82.5%（−5pt）；B 额外掉 FM05/FM07/FH12，A 独掉 FE01（`cust_type` 码值漂移，B 反而过）→ 仍有 few-shot 依赖与随机性。
+- **主要失败族（S6 深挖后）**：详见 [`logs/eval_reports/extra2_fail_summary.md`](../eval_reports/extra2_fail_summary.md)。
+  1. **P0 剪枝×L1**：FE09 剪枝只留 `dim_branch`，`allowed=pruned.tables` 导致合法 `ads_cust_info_d` 被拒（`schema_pruner._ensure_customer_hub` + `pipeline.py`）。
+  2. **P1 元数据未进 Prompt / 列义冲突**：FE01 `enum_values` 未渲染；FM08 金标 `assign_in` 与 YAML「证券转入=`tran_in`」冲突（宜改金标）。
+  3. **P1 Prompt/Few-Shot**：FH02 死磕规则 16 三列投影；FM05 `手续费`←佣金样例/`rake`。
+  4. **P2 生成口径**：FH04/FM07「净流入」无硬规则；FH12 改写窗漂 Q1。
+- **态度（本续二）**：不改 Prompt/L1 刷 Extra2；backlog 按上表优先修剪枝允许表与元数据渲染；FM08 先审金标。
+
+### 9.4 S6 版块定位一览
+
+| 排序 | 版块 | 关键路径 | 代表题 |
+|------|------|----------|--------|
+| 1 | Schema 剪枝 + Pipeline 允许表 | `schema_pruner.py` / `pipeline.py` | FE09 |
+| 2 | 元数据 YAML + Schema 渲染 | `bundle.py` / `ads_cust_info_d.yaml` / `dws_cust_fin_d.yaml` | FE01, FM08 |
+| 3 | System Prompt / Few-Shot | `prompt.py` 规则16 / `examples.yaml` 佣金 | FH02, FM05 |
+| 4 | LLM 生成（规则缺口） | `prompt.py` 缺净流入；生成器 | FH04, FM07, FH12 |
 
 ---
 
 ## 十、答辩话术（收口后可引用）
 
-1. **清新 held-out**：在官方 7 + Extra36 之外另建 Extra2（40 题），关短路双轨复测，专门回答「是不是只过拟合旧题」。  
-2. **工程代价低**：复用既有 EX 管线与元数据约定，增量主要在金标质量与去重门禁。  
-3. **与提准解耦**：续一修旧集暴露的工程洞；Extra2 用来度量合入前后的泛化是否站得住（报告注明 Agent 版本）。
+1. **清新 held-out**：在官方 7 + Extra36 之外另建 Extra2（40 题），关短路双轨复测；官方仍 7/7，Extra2-A **87.5%**、B **82.5%**，专门回答「是不是只过拟合旧题」。  
+2. **工程代价低**：复用既有 EX 管线与元数据约定；S4 isolation 保证评测原文不进 exact 短路。  
+3. **与提准解耦 / 过拟合证据**：续一已使 Extra36 A/B 满分，但同一 Agent 在 Extra2 未达 90%——说明旧集提准成功，**不等于**清新问法已达标；缺口集中在枚举码、assign/净流入口径与个别 L1/剪枝异常。
 
 ---
 
@@ -516,7 +541,9 @@ S7  本文勾选收口；数字回填 §九
 | 类型 | 路径 |
 |------|------|
 | 本规划 | `logs/04-阶段四续二-Extra2清新泛化评测集.md` |
-| Extra2 数据（待建） | `data/extra2/` |
+| Extra2 数据 | `data/extra2/`（xlsx + entities + build） |
+| Isolation | `tests/test_extra2_isolation.py` |
+| 评测报告 | `logs/eval_reports/extra2_A_fs3.*`、`extra2_B_fs0.*`、`official_p4x2_default.*` |
 | Extra36（只读对照） | `data/extra/Q&A_all.xlsx` |
 | 官方（只读） | `data/Q&A.xlsx` |
 | 评测入口 | `scripts/baseline_eval.py`、`querypilot eval` |
