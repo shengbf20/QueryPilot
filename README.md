@@ -252,3 +252,18 @@ querypilot ask "有多少年龄大于30岁的女性客户？"
 # 批量 Demo（5 条样例问句）
 python scripts/demo_pipeline.py
 ```
+
+### 阶段四快速试用（缓存 / 压测）
+
+```powershell
+# 同问二次：第二次应 cache_hit=yes（热路径毫秒～亚秒）
+querypilot ask "有多少年龄大于30岁的女性客户？"
+querypilot ask "有多少年龄大于30岁的女性客户？"
+
+# 冷/热压测 + 收口报告
+python scripts/bench_pipeline.py --limit 3 --warm --output logs/perf_reports/bench_warm.json
+python scripts/phase4_perf_closeout.py --live
+
+# 多指标并行对比（规则路径，与默认 ask 无关）
+python scripts/bench_pipeline.py --parallel --no-save
+```
