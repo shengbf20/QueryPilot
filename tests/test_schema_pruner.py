@@ -43,6 +43,35 @@ def test_prune_trade_and_product(pruner):
     assert "dim_product" in result.seed_tables or "dim_product" in result.tables
 
 
+def test_prune_gold_q5_trade_and_named_securities(pruner):
+    """交易过证券 + 持有证券 → must allow dim_product (was L1 Table not allowed)."""
+    result = pruner.prune("26年Q1交易过招商银行，且26年Q1末普通账户持有中国平安的客户")
+    assert "dwd_cust_tran_d" in result.tables
+    assert "dim_product" in result.tables
+    assert "dwd_cust_hold_d" in result.tables
+
+
+def test_prune_gold_q6_avg_asset_and_trade_volume(pruner):
+    """产品大类 + 交易量：tran must survive top_k crowding by asset/hold hubs."""
+    result = pruner.prune(
+        "26年Q1日均资产大于30万的客户，股票交易量大于10万的，其持有的产品属于哪些产品大类"
+    )
+    assert "dim_product" in result.tables
+    assert "dwd_cust_tran_d" in result.tables
+    assert "dws_cust_aset_d" in result.tables
+    assert "dwd_cust_hold_d" in result.tables
+
+
+def test_prune_gold_q7_board_trade_and_branch(pruner):
+    """科创板交易量 → dim_product + dwd_cust_tran_d (board type lives on product dim)."""
+    result = pruner.prune(
+        "查询26年1月10日到26年2月15日期间，科创板交易量大于25万的客户营业部分布情况"
+    )
+    assert "dim_product" in result.tables
+    assert "dwd_cust_tran_d" in result.tables
+    assert "dim_branch" in result.tables or "ads_cust_info_d" in result.tables
+
+
 def test_prune_holdings(pruner):
     result = pruner.prune("客户持仓市值排名")
     assert "dwd_cust_hold_d" in result.seed_tables

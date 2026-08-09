@@ -76,6 +76,15 @@ def test_system_prompt_hard_rules():
     assert "code_type_id" in SYSTEM_PROMPT
     assert "CTE" in SYSTEM_PROMPT or "WITH" in SYSTEM_PROMPT
     assert "JSON" in SYSTEM_PROMPT or "json" in SYSTEM_PROMPT
+    # Step-2 projection / product / metric guardrails
+    assert "COUNT" in SYSTEM_PROMPT
+    assert "dim_product" in SYSTEM_PROMPT
+    assert "prdt_name" in SYSTEM_PROMPT
+    assert "nm_tot_aset" in SYSTEM_PROMPT and "fc_pur_aset" in SYSTEM_PROMPT
+    assert "buy_amt" in SYSTEM_PROMPT and "sell_amt" in SYSTEM_PROMPT
+    assert "city_name" in SYSTEM_PROMPT
+    assert "YYYYMMDD" in SYSTEM_PROMPT
+    assert "MAX(data_dt)" in SYSTEM_PROMPT or "MAX" in SYSTEM_PROMPT
 
 
 def test_load_few_shots_has_examples():

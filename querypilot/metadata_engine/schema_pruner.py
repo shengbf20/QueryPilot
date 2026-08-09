@@ -16,8 +16,38 @@ _QUERY_EXPANSIONS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
     (("卖过", "卖掉", "卖出过"), ("卖出", "交易")),
     (("持有",), ("持仓",)),
     (("入金", "出金", "净流入"), ("资金", "现金流入", "现金流出")),
+    (("盈亏", "损益", "收益情况"), ("资金", "资产", "资金流入", "资金流出")),
     (("AUM", "净资产", "资产规模"), ("总资产", "资产")),
     (("会员", "VIP", "高净值"), ("客户等级",)),
+    # Product / board / trade cues (gold Q&A 5–7 often omit the literal table aliases).
+    (("交易量", "交易过", "交易额", "成交额"), ("交易", "买入", "卖出", "客户交易")),
+    (("科创板", "创业板", "主板", "A股"), ("产品类型", "产品二级分类", "产品")),
+    (("产品大类", "产品类型", "证券"), ("产品", "产品大类", "产品一级分类")),
+)
+
+# Domain cues → force-include tables even when keyword score is low or top_k is full.
+_DOMAIN_SEED_CUES: tuple[tuple[tuple[str, ...], str], ...] = (
+    (("交易", "买入", "卖出", "买卖", "交易量", "交易额", "成交额", "客户交易"), "dwd_cust_tran_d"),
+    (("持有", "持仓", "市值"), "dwd_cust_hold_d"),
+    (
+        (
+            "产品",
+            "产品大类",
+            "产品类型",
+            "产品二级分类",
+            "产品一级分类",
+            "基金",
+            "证券",
+            "科创板",
+            "创业板",
+            "主板",
+            "A股",
+            "持仓",
+            "持有",
+        ),
+        "dim_product",
+    ),
+    (("盈亏", "损益", "入金", "出金", "净流入", "资金流入", "资金流出"), "dws_cust_fin_d"),
 )
 
 # Dim dictionary is usually injected via value descriptors, not as a join seed.
@@ -135,6 +165,7 @@ class SchemaPruner:
         table_hits = self._score_tables(search_text)
         seeds = self._select_seeds(table_hits, top_k=top_k, min_score=min_score)
         seeds = _ensure_customer_hub(seeds, search_text)
+        seeds = _ensure_domain_seeds(seeds, search_text, self.metadata)
 
         if not seeds and fallback_table and fallback_table in self.metadata.tables:
             seeds = [fallback_table]
@@ -283,6 +314,25 @@ def _ensure_customer_hub(seeds: list[str], search_text: str) -> list[str]:
     if mentions_customer and has_fact:
         return ["ads_cust_info_d", *seeds]
     return seeds
+
+
+def _ensure_domain_seeds(
+    seeds: list[str],
+    search_text: str,
+    metadata: MetadataBundle,
+) -> list[str]:
+    """Append domain-required tables beyond top_k when NL cues match.
+
+    Fixes gold cases where product/trade tables score 0 (named securities / boards)
+    or fall just below the seed cutoff while higher-scoring hubs fill top_k.
+    """
+    out = list(seeds)
+    for cues, table in _DOMAIN_SEED_CUES:
+        if table in out or table not in metadata.tables:
+            continue
+        if any(cue in search_text for cue in cues):
+            out.append(table)
+    return out
 
 
 def _column_terms(col: ColumnMeta) -> list[_Term]:
