@@ -113,6 +113,21 @@ def test_format_for_prompt(sample_registry, sample_db):
     assert "女(5000003)" in text
 
 
+def test_format_for_prompt_pins_priority_codes(sample_registry):
+    """Truncation must keep YAML priority_codes (e.g. 非公职 离/退休)."""
+    assert sample_registry.priority_codes.get("700") == ["7000032"]
+    # Many codes; without pinning, 7000032 alone may fall outside first 8 items
+    other = {f"70000{i:02d}": f"工种{i}" for i in range(10, 30)}
+    sample_registry.codes_by_type = {"700": {**other, "7000032": "非公职 离/退休"}}
+    text = sample_registry.format_for_prompt(
+        "ads_cust_info_d", "prof_cd", max_items=8
+    )
+    assert "7000032" in text
+    assert "非公职 离/退休" in text
+    body = text.split(": ", 1)[1]
+    assert body.startswith("非公职 离/退休(7000032)")
+
+
 def test_config_validation_passes(sample_registry):
     result = validate_value_descriptor_config(sample_registry)
     assert result.ok, result.errors

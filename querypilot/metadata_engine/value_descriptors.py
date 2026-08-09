@@ -33,6 +33,7 @@ class ValueDescriptorRegistry:
     static_enums: dict[str, dict[str, str]]
     unused_code_types: dict[str, str]
     codes_by_type: dict[str, dict[str, str]] = field(default_factory=dict)
+    priority_codes: dict[str, list[str]] = field(default_factory=dict)
 
     def get_code_type_id(self, table: str, column: str) -> str | None:
         return self.column_to_code_type.get((table, column))
@@ -55,6 +56,21 @@ class ValueDescriptorRegistry:
     def get_codes_for_type(self, code_type_id: str) -> dict[str, str]:
         return dict(self.codes_by_type.get(code_type_id, {}))
 
+    def _ordered_code_items(self, code_type_id: str, pairs: dict[str, str]) -> list[tuple[str, str]]:
+        """Return (code, describe) pairs with priority codes first."""
+        priority = [str(c) for c in self.priority_codes.get(code_type_id, [])]
+        seen: set[str] = set()
+        ordered: list[tuple[str, str]] = []
+        for code in priority:
+            if code in pairs and code not in seen:
+                ordered.append((code, pairs[code]))
+                seen.add(code)
+        for code, desc in pairs.items():
+            if code not in seen:
+                ordered.append((code, desc))
+                seen.add(code)
+        return ordered
+
     def format_for_prompt(
         self,
         table: str,
@@ -72,7 +88,7 @@ class ValueDescriptorRegistry:
         if not pairs:
             return f"{label}({column}): 字典数据未加载"
 
-        items = list(pairs.items())
+        items = self._ordered_code_items(code_type_id, pairs)
         if max_items is not None and len(items) > max_items:
             shown = items[:max_items]
             suffix = f" ...共{len(items)}项"
@@ -112,11 +128,18 @@ def load_value_descriptor_config(path: Path | None = None) -> ValueDescriptorReg
         for ref in refs:
             column_to_code_type[(ref.table, ref.column)] = code_type_id
 
+    raw_priority = raw.get("priority_codes") or {}
+    priority_codes: dict[str, list[str]] = {
+        str(code_type_id): [str(c) for c in (codes or [])]
+        for code_type_id, codes in raw_priority.items()
+    }
+
     return ValueDescriptorRegistry(
         code_types=code_types,
         column_to_code_type=column_to_code_type,
         static_enums=raw.get("static_enums", {}),
         unused_code_types=raw.get("unused_code_types", {}),
+        priority_codes=priority_codes,
     )
 
 

@@ -158,7 +158,9 @@ def test_ask_pipeline_l1_blocks_dangerous_sql(metadata):
 
 @requires_db
 def test_ask_pipeline_generate_failure(metadata):
-    client = _FakeClient(["not-a-json-payload"])
+    # generate_sql retries once on JsonParseError; both attempts must fail.
+    # (_FakeClient falls back to SELECT 1 when the queue is empty — avoid that.)
+    client = _FakeClient(["not-a-json-payload", "still-not-json"])
     out = ask(
         "客户数量",
         metadata=metadata,
@@ -170,7 +172,7 @@ def test_ask_pipeline_generate_failure(metadata):
     assert out.degraded
     assert out.stage == "generate"
     assert "SQL 生成失败" in out.message
-    assert client.chat.completions.calls == 1
+    assert client.chat.completions.calls == 2
 
 
 @requires_db

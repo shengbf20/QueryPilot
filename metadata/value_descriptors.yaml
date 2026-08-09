@@ -34,6 +34,11 @@ unused_code_types:
   "300": 证件类型
   "400": 风险偏好
 
+# When format_for_prompt truncates enums, pin these codes first (by code_type_id).
+priority_codes:
+  "700":
+    - "7000032"  # 非公职 离/退休
+
 static_enums:
   sys_source:
     nm: 普通账户

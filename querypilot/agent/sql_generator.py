@@ -8,7 +8,7 @@ from openai import OpenAI
 
 from querypilot.agent.models import FewShotExample, PromptBundle, SqlGenerationResult
 from querypilot.agent.prompt import build_prompt, find_exact_few_shot, load_few_shots
-from querypilot.llm.chat import generate_json
+from querypilot.llm.chat import JsonParseError, generate_json
 from querypilot.metadata_engine.bundle import MetadataBundle, load_metadata
 from querypilot.metadata_engine.schema_pruner import PrunedSchema, SchemaPruner
 
@@ -39,6 +39,33 @@ def parse_sql_payload(data: dict[str, Any]) -> tuple[str, str, bool]:
     if not uses_cte and sql.lstrip().upper().startswith("WITH"):
         uses_cte = True
     return sql, rationale, uses_cte
+
+
+def _generate_json_once_with_retry(
+    user: str,
+    *,
+    system: str,
+    temperature: float,
+    max_tokens: int | None,
+    client: OpenAI | None,
+) -> dict[str, Any]:
+    """Call generate_json; on JsonParseError retry exactly once."""
+    try:
+        return generate_json(
+            user,
+            system=system,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            client=client,
+        )
+    except JsonParseError:
+        return generate_json(
+            user,
+            system=system,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            client=client,
+        )
 
 
 def generate_sql(
@@ -91,7 +118,7 @@ def generate_sql(
                 pruned=pruned_schema,
             )
 
-    raw = generate_json(
+    raw = _generate_json_once_with_retry(
         prompt.user,
         system=prompt.system,
         temperature=temperature,
@@ -117,7 +144,7 @@ def generate_sql_from_prompt(
     max_tokens: int | None = 1200,
 ) -> SqlGenerationResult:
     """Call LLM with an already-built PromptBundle (useful for tests / correction loops)."""
-    raw = generate_json(
+    raw = _generate_json_once_with_retry(
         prompt.user,
         system=prompt.system,
         temperature=temperature,

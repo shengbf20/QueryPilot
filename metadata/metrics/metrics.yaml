@@ -6,7 +6,10 @@ metrics:
     kind: derived
     tables: [dws_cust_aset_d]
     formula: "coalesce(nm_tot_aset,0)+coalesce(fc_pur_aset,0)"
-    description: 本外币合计总资产；业务「总资产/资产规模」默认用此口径，勿只取 nm_tot_aset。
+    description: >
+      本外币合计总资产；业务「总资产/资产规模」默认用此口径。
+      本币总资产=仅 nm_tot_aset；总资产=nm_tot_aset+fc_pur_aset；对比两门槛时勿混为同一表达式。
+      资产列仅存在于 dws_cust_aset_d。
 
   - id: q1_2026_window
     name: 2026年Q1时间窗
@@ -28,8 +31,10 @@ metrics:
     tables: [dwd_cust_tran_d]
     formula: "sum(buy_amt)+sum(sell_amt)"
     description: >
-      买卖金额合计。题目指「股票」一级类时关联 dim_product 且 up_prdt_type_id='PT040000'；
+      买卖金额合计。dwd_cust_tran_d 无物理列 tran_amt，须用 buy_amt+sell_amt（别名建议 trade_amt）。
+      题目指「股票」一级类时关联 dim_product 且 up_prdt_type_id='PT040000'；
       指「A股」等二级类型时用 prdt_type_name='A股'，不要用 PT040000 代替。期间「合计超过」用 HAVING SUM，勿先过滤日级金额。
+      勿经日资产表 LEFT JOIN 后再 SUM 交易额（会按日行放大）。
 
   - id: product_type_levels
     name: 产品分类层级

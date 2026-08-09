@@ -100,18 +100,31 @@ examples:
       INNER JOIN dim_product AS c ON b.prdt_id = c.prdt_id
       GROUP BY c.prdt_type_name, c.up_prdt_type_name
 
+  - question: 分公司和营业部的客户省份分布统计
+    rationale: 题面同时含分公司与营业部+省份，输出 up_org_name、org_name、prov_name、city_name 与人数；先 Join dim_branch 再按名称分组。
+    sql: |
+      SELECT
+        b.up_org_name,
+        b.org_name,
+        a.prov_name,
+        a.city_name,
+        COUNT(*) AS cnt
+      FROM ads_cust_info_d AS a
+      INNER JOIN dim_branch AS b ON a.org_id = b.org_id
+      GROUP BY b.up_org_name, b.org_name, a.prov_name, a.city_name
+
   - question: 查询26年1月10日到26年2月15日期间，科创板交易量大于25万的客户营业部分布情况
-    rationale: 科创板用 prdt_type_name（二级）；交易量=buy+sell；营业部分布输出 up_org_name、org_name、sum(tran_amt)，不要改成 COUNT。
+    rationale: 科创板用 prdt_type_name（二级）；交易量=buy+sell（子查询别名 trade_amt，非物理列）；本题官方金标含分公司+营业部两列，输出 up_org_name、org_name、trade_amt。
     sql: |
       SELECT
         c.up_org_name,
         c.org_name,
-        SUM(b.tran_amt) AS tran_amt
+        SUM(b.trade_amt) AS trade_amt
       FROM ads_cust_info_d AS a
       INNER JOIN (
         SELECT
           t.pty_id,
-          SUM(t.buy_amt) + SUM(t.sell_amt) AS tran_amt
+          SUM(t.buy_amt) + SUM(t.sell_amt) AS trade_amt
         FROM dwd_cust_tran_d AS t
         INNER JOIN dim_product AS p
           ON t.prdt_id = p.prdt_id

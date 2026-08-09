@@ -2,7 +2,7 @@
 
 > 记录范围：在不改动官方 `data/Q&A.xlsx`（7 题）前提下，规划并落地 Extra 评测集（easy:medium:hard = **10:14:12**，共 **36** 题），用于更全面评价 Agent 泛化能力，并经 HITL 精选回流增强 Few-Shot。  
 > 记录时间：2026-08-09  
-> 状态：🚧 **P0 已落地并复测** → 下一步 **P1**（字典原文 / 资产列归属）+ 投影纪律；目标 Extra-A ≥33/36  
+> 状态：🚧 **P1 已落地并复测** → Extra-A（fs=3）**34/36 ≥90%**；下一步 Step 5 Few-Shot 回流 / 收口  
 > 前置依赖：阶段三评测闭环（EX / 归因 / HITL）；阶段三续一官方 7 题 EX **7/7 = 100%**
 
 ---
@@ -570,6 +570,34 @@ python scripts/baseline_eval.py --path "data/extra/Q&A_all.xlsx" --no-exact-few-
 - **P1 原定**：E02 / M11 / H03（字典、资产列）  
 - **投影/幻觉（建议并入 P1/P2）**：M13、H06 多出 `up_org_name`（与规则 11「见营业部就出 up_org」过宽有关）；H07 臆造 `tran_amt`
 
+#### Step 4.3 P1 落地记录（2026-08-09）
+
+| 改动 | 文件 |
+|------|------|
+| 规则 6：`describe` 原文 + 职业优先 `prof_cd='7000032'` | `querypilot/agent/prompt.py` |
+| 规则 10：「哪些客户」只出 `pty_id` | 同上 |
+| 规则 11：仅营业部 → `org_name`；分公司才加 `up_org_name` | 同上 |
+| 规则 13：资产列仅 `dws_cust_aset_d`；禁物理 `tran_amt`；本币 vs 总资产分拆；禁 aset×tran fan-out | 同上 |
+| `priority_codes` 截断置顶 `7000032` | `metadata/value_descriptors.yaml` + `value_descriptors.py` |
+| metrics：本币/总资产对照；`trade_amt` 无物理列 | `metadata/metrics/metrics.yaml` |
+| 科创板样例别名 → `trade_amt`；补官方 case4 省份分布 exact few-shot | `metadata/few_shots/examples.yaml` |
+| `JsonParseError` 单次重试 | `querypilot/agent/sql_generator.py` |
+
+| 复测（独立 stem，避免覆盖） | EX | 失败 | 产物 |
+|------|-----|------|------|
+| Extra-A fs=3 关短路 | **34/36 = 94.4%** | M09, H07 | `extra_all_A_fs3.*` |
+| Extra fs=0 关短路 | **32/36 = 88.9%** | M09, H01, H02, H04 | `extra_all_A_fs0.*` |
+| 官方默认（开短路） | **7/7 = 100%** | — | `official_default.*` |
+
+**P1 已清：** E02 / M11 / M13 / H03 / H06（及 fs=0 侧 M07/M08）。  
+**残留（非阻塞 90%）：**
+
+| id | 现象 | 归因 |
+|----|------|------|
+| M09 | `prdt_type_name='开放式基金'` vs 金标 `up_prdt_type_id='PT050000'` | 基金一级大类 vs 二级名混淆（对称于 H05） |
+| H07（fs3） | Top-5 行集合不一致 | 缺 `ORDER BY trade_amt, org_name` 稳定次序 / 轻微投影差 |
+| 官方关短路 case6 | pred=24 gold=25（历史 `official_reg`） | **金标** `dws_cust_aset_d`×tran **fan-out**；Agent 与 Extra H02 语义正确，**不复刻凑 EX** |
+
 ### Step 5 — Few-Shot 回流（与评测隔离）
 
 | 子步 | 动作 | 验证 |
@@ -647,7 +675,7 @@ flowchart TD
 |------|------|
 | Extra 金标写错误导迭代 | 先执行结果与抽查，再信 Agent；两步校验 |
 | 阈值导致全空 | 写题时用探索 SQL 调阈值 |
-| 与官方题 3/6 怪癖纠缠 | 新盈亏/日均题对齐**当前 metrics**，手册注明；不强制复刻死 CTE |
+| 与官方题 3/6 怪癖纠缠 | 新盈亏/日均题对齐**当前 metrics**，手册注明；不强制复刻死 CTE；关短路 case6 的 24≠25 为金标 fan-out，产品默认开短路仍 7/7 |
 | LLM 评测成本 | 分档跑；改代码后先 `--limit` 再全量 |
 | 答辩混淆两套分数 | 明确：官方 7 = 赛题功能验证；Extra 36 = 泛化与主题补全 |
 
@@ -670,7 +698,8 @@ flowchart TD
 | Step 2f `Q&A_all.xlsx` | ✅ |
 | Step 3 官方回归 + Extra-A/B | ✅ |
 | Step 4 归因与修复规划（4.1–4.2） | ✅ |
-| Step 4.3 P0 Prompt + 复测 | ✅（子集 3/3；全量仍 30/36，待 P1） |
+| Step 4.3 P0 Prompt + 复测 | ✅（子集 3/3；全量曾 30/36） |
+| Step 4.3 P1 Prompt/枚举/metrics/JSON 重试 + 复测 | ✅（Extra-A fs3 **34/36**；官方默认 **7/7**） |
 | Step 5 candidates + HITL 回流 | ⬜ |
 | Step 6 本文收口贴数字 | ⬜ |
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
@@ -21,6 +22,7 @@ from querypilot.agent import (
 from querypilot.agent.prompt import SYSTEM_PROMPT
 from querypilot.config import get_settings
 from querypilot.db import explain
+from querypilot.llm.chat import JsonParseError
 from querypilot.metadata_engine import SchemaPruner, load_metadata
 
 # JOIN ... ON <cond> — stop at next clause keyword (allows WHERE data_dt filters).
@@ -93,6 +95,14 @@ def test_system_prompt_hard_rules():
     assert "盈亏" in SYSTEM_PROMPT
     assert "aset_pft" in SYSTEM_PROMPT
     assert "dws_cust_fin_d" in SYSTEM_PROMPT
+    # P1: dict literal / branch projection / asset ownership / no physical tran_amt
+    assert "7000032" in SYSTEM_PROMPT
+    assert "非公职" in SYSTEM_PROMPT
+    assert "只输出 pty_id" in SYSTEM_PROMPT
+    assert "不要加 up_org_name" in SYSTEM_PROMPT
+    assert "dws_cust_aset_d" in SYSTEM_PROMPT
+    assert "trade_amt" in SYSTEM_PROMPT
+    assert "tran_amt" in SYSTEM_PROMPT  # banned as physical column
 
 
 def test_load_few_shots_has_examples():
@@ -123,6 +133,22 @@ def test_select_few_shots_ranks_by_overlap():
     assert picked[0].question == q
     assert "科创板" in picked[0].sql
     assert "up_org_name" in picked[0].sql
+    assert "trade_amt" in picked[0].sql
+
+
+def test_exact_few_shot_covers_official_branch_and_geo():
+    shots = load_few_shots()
+    from querypilot.agent.prompt import find_exact_few_shot
+
+    board = find_exact_few_shot(
+        "查询26年1月10日到26年2月15日期间，科创板交易量大于25万的客户营业部分布情况",
+        shots,
+    )
+    assert board is not None
+    assert "trade_amt" in board.sql
+    geo = find_exact_few_shot("分公司和营业部的客户省份分布统计", shots)
+    assert geo is not None
+    assert "prov_name" in geo.sql and "up_org_name" in geo.sql
 
 
 def test_select_few_shots_prefers_product_category_example():
@@ -203,7 +229,7 @@ def test_build_prompt_injects_ranked_board_shot(metadata, pruner):
     pruned = pruner.prune(question)
     prompt = build_prompt(question, pruned, metadata, max_few_shots=3)
     assert "科创板" in prompt.user
-    assert "tran_amt" in prompt.user or "buy_amt" in prompt.user
+    assert "trade_amt" in prompt.user or "buy_amt" in prompt.user
 
 
 def test_build_prompt_can_disable_few_shots(metadata, pruner):
@@ -302,6 +328,31 @@ def test_generate_sql_from_prompt_with_fake_client(metadata, pruner):
     assert kwargs is not None
     assert kwargs["response_format"] == {"type": "json_object"}
     assert kwargs["messages"][0]["content"] == SYSTEM_PROMPT
+
+
+def test_generate_sql_retries_once_on_json_parse_error(metadata, pruner):
+    pruned = pruner.prune("客户数量")
+    prompt = build_prompt("客户数量", pruned, metadata, few_shots=[])
+    calls = {"n": 0}
+
+    def flaky_generate_json(*_args, **_kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise JsonParseError("Invalid JSON from model: bad control char")
+        return {
+            "sql": "SELECT COUNT(*) AS cnt FROM ads_cust_info_d",
+            "rationale": "retry ok",
+            "uses_cte": False,
+        }
+
+    with patch(
+        "querypilot.agent.sql_generator.generate_json",
+        side_effect=flaky_generate_json,
+    ):
+        result = generate_sql_from_prompt(prompt)
+    assert calls["n"] == 2
+    assert "ads_cust_info_d" in result.sql
+    assert result.rationale == "retry ok"
 
 
 def test_generate_sql_allow_exact_few_shot_false_calls_llm(metadata, pruner):
