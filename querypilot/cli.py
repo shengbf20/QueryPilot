@@ -153,6 +153,13 @@ def format_pipeline_result(result: PipelineResult, *, max_print_rows: int = 20) 
     ]
     if result.tables:
         lines.append(f"tables: {', '.join(result.tables)}")
+    t = result.timing
+    lines.append(
+        "timing_ms: "
+        f"total={t.total_ms:.1f} prune={t.prune_ms:.1f} generate={t.generate_ms:.1f} "
+        f"l1={t.l1_ms:.1f} l2={t.l2_ms:.1f} execute={t.execute_ms:.1f} "
+        f"probe={t.probe_ms:.1f} cache_hit={t.cache_hit}"
+    )
     if result.sql:
         lines.append("sql:")
         lines.append(result.sql)
@@ -359,8 +366,23 @@ def _main_review(args: argparse.Namespace, parser: argparse.ArgumentParser) -> i
     return 2
 
 
+def _timing_from_dict(timing_raw: dict) -> "TimingInfo":
+    from querypilot.eval.models import TimingInfo
+
+    kwargs: dict = {}
+    for name, f in TimingInfo.__dataclass_fields__.items():
+        if name not in timing_raw:
+            continue
+        raw_val = timing_raw[name]
+        if f.type in ("bool", bool) or name == "cache_hit":
+            kwargs[name] = bool(raw_val)
+        else:
+            kwargs[name] = float(raw_val or 0.0)
+    return TimingInfo(**kwargs)
+
+
 def _report_from_dict(raw: dict) -> EvalReport:
-    from querypilot.eval.models import CaseEvalResult, TimingInfo
+    from querypilot.eval.models import CaseEvalResult
 
     results = []
     for item in raw.get("results") or []:
@@ -378,12 +400,7 @@ def _report_from_dict(raw: dict) -> EvalReport:
                 error=str(item.get("error", "")),
                 match_reason=str(item.get("match_reason", "")),
                 difficulty=item.get("difficulty"),
-                timing=TimingInfo(
-                    **{
-                        k: float(timing_raw.get(k, 0.0))
-                        for k in TimingInfo.__dataclass_fields__
-                    }
-                ),
+                timing=_timing_from_dict(timing_raw),
                 stage=str(item.get("stage", "")),
                 extras=dict(item.get("extras") or {}),
             )

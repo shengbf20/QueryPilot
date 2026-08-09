@@ -50,6 +50,7 @@ def test_format_pipeline_result_ok():
     )
     text = format_pipeline_result(result)
     assert "status: ok" in text
+    assert "timing_ms:" in text
     assert "ads_cust_info_d" in text
     assert "SELECT COUNT(*)" in text
     assert "cnt" in text

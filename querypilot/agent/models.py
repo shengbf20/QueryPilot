@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from querypilot.metadata_engine.schema_pruner import PrunedSchema
@@ -45,6 +45,23 @@ class SqlGenerationResult:
 
 
 @dataclass
+class StageTiming:
+    """Per-stage latency for ask() (milliseconds)."""
+
+    prune_ms: float = 0.0
+    generate_ms: float = 0.0
+    l1_ms: float = 0.0
+    l2_ms: float = 0.0
+    execute_ms: float = 0.0
+    probe_ms: float = 0.0
+    total_ms: float = 0.0
+    cache_hit: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
 class PipelineResult:
     """End-to-end ask() outcome: SQL + rows or a degraded explanation."""
 
@@ -63,4 +80,5 @@ class PipelineResult:
     corrected: bool = False
     stage: str = ""  # prune|generate|l1|l2|execute|probe|done
     pruned: PrunedSchema | None = None
+    timing: StageTiming = field(default_factory=StageTiming)
     extras: dict[str, Any] = field(default_factory=dict)

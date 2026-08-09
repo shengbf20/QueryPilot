@@ -31,12 +31,24 @@ class MatchResult:
 
 @dataclass(frozen=True)
 class TimingInfo:
-    """Per-case latency breakdown (milliseconds)."""
+    """Per-case latency breakdown (milliseconds).
+
+    ``ask_ms`` / ``gold_execute_ms`` / ``match_ms`` are eval-runner wall times.
+    Stage fields (``prune_ms`` … ``probe_ms``) are copied from ``ask()`` when
+    available; older reports leave them at 0.
+    """
 
     total_ms: float = 0.0
     ask_ms: float = 0.0
     gold_execute_ms: float = 0.0
     match_ms: float = 0.0
+    prune_ms: float = 0.0
+    generate_ms: float = 0.0
+    l1_ms: float = 0.0
+    l2_ms: float = 0.0
+    execute_ms: float = 0.0
+    probe_ms: float = 0.0
+    cache_hit: bool = False
 
 
 @dataclass

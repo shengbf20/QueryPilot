@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from querypilot.agent.models import FewShotExample, PipelineResult, PromptBundle, SqlGenerationResult
+from querypilot.agent.models import (
+    FewShotExample,
+    PipelineResult,
+    PromptBundle,
+    SqlGenerationResult,
+    StageTiming,
+)
 from querypilot.agent.prompt import SYSTEM_PROMPT, build_prompt, load_few_shots
 from querypilot.agent.sql_generator import (
     SqlGenerationError,
@@ -23,6 +29,7 @@ __all__ = [
     "PromptBundle",
     "SqlGenerationError",
     "SqlGenerationResult",
+    "StageTiming",
     "ask",
     "build_prompt",
     "generate_sql",

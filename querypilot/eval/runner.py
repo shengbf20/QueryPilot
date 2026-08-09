@@ -174,6 +174,7 @@ def run_case(
             error = mr.reason
 
     total_ms = _elapsed_ms(t_all)
+    stage_timing = getattr(pipe, "timing", None) if pipe is not None else None
     return CaseEvalResult(
         case_id=case.id,
         question=case.question,
@@ -191,6 +192,13 @@ def run_case(
             ask_ms=ask_ms,
             gold_execute_ms=gold_ms,
             match_ms=match_ms,
+            prune_ms=float(getattr(stage_timing, "prune_ms", 0.0) or 0.0),
+            generate_ms=float(getattr(stage_timing, "generate_ms", 0.0) or 0.0),
+            l1_ms=float(getattr(stage_timing, "l1_ms", 0.0) or 0.0),
+            l2_ms=float(getattr(stage_timing, "l2_ms", 0.0) or 0.0),
+            execute_ms=float(getattr(stage_timing, "execute_ms", 0.0) or 0.0),
+            probe_ms=float(getattr(stage_timing, "probe_ms", 0.0) or 0.0),
+            cache_hit=bool(getattr(stage_timing, "cache_hit", False)),
         ),
         stage=stage,
     )

@@ -10,6 +10,7 @@ db/
 .ruff_cache/
 logs/eval_reports/
 logs/review/
+logs/perf_reports/
 artifacts/eval/
 *.egg-info/
 dist/
