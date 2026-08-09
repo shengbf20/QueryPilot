@@ -26,6 +26,7 @@
 | `entities.md` | Step 2a 探数结果（写金标常量冻结表） |
 | `_explore_step2a.py` | 探数复现脚本（`PYTHONPATH=. python data/extra/_explore_step2a.py`） |
 | `_explore_report.txt` | 探数原始输出 |
+| `_analyze_extra_a_fails.py` | Step 4：对照 Extra-A 失败题 pred/gold（需已有 `extra_all_A_report.json`） |
 | `README.md` | 本说明 |
 
 规划详见 `logs/03-阶段三续二-Extra金标扩充与泛化评测.md`。

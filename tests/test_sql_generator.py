@@ -88,6 +88,8 @@ def test_system_prompt_hard_rules():
     assert "MAX(data_dt)" in SYSTEM_PROMPT or "MAX" in SYSTEM_PROMPT
     assert "[60,)" in SYSTEM_PROMPT
     assert "prdt_type_name" in SYSTEM_PROMPT
+    assert "PT040000" in SYSTEM_PROMPT
+    assert "HAVING" in SYSTEM_PROMPT
     assert "盈亏" in SYSTEM_PROMPT
     assert "aset_pft" in SYSTEM_PROMPT
     assert "dws_cust_fin_d" in SYSTEM_PROMPT

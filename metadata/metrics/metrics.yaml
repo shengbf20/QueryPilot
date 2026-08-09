@@ -27,14 +27,18 @@ metrics:
     kind: derived
     tables: [dwd_cust_tran_d]
     formula: "sum(buy_amt)+sum(sell_amt)"
-    description: 买卖金额合计；股票交易需再关联 dim_product 且 up_prdt_type_id='PT040000'（股票一级类）。
+    description: >
+      买卖金额合计。题目指「股票」一级类时关联 dim_product 且 up_prdt_type_id='PT040000'；
+      指「A股」等二级类型时用 prdt_type_name='A股'，不要用 PT040000 代替。期间「合计超过」用 HAVING SUM，勿先过滤日级金额。
 
   - id: product_type_levels
     name: 产品分类层级
     kind: convention
     tables: [dim_product]
     formula: "prdt_type_name=二级(科创板/A股等); up_prdt_type_name=一级大类"
-    description: 科创板/A股/主板等用 prdt_type_name；「产品大类」用 up_prdt_type_name。问产品大类分布时同时输出 up_prdt_type_name、prdt_type_name，并对持仓 sum(mkt_val)。
+    description: >
+      科创板/A股/主板等二级用 prdt_type_name；「股票/产品大类」用 up_prdt_type_name 或 up_prdt_type_id（股票=PT040000）。
+      问「A股」不可写成 PT040000。问产品大类分布时同时输出 up_prdt_type_name、prdt_type_name，并对持仓 sum(mkt_val)。
 
   - id: age_bucket_labels
     name: 年龄段标签

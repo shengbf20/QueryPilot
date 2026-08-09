@@ -2,7 +2,7 @@
 
 > 记录范围：在不改动官方 `data/Q&A.xlsx`（7 题）前提下，规划并落地 Extra 评测集（easy:medium:hard = **10:14:12**，共 **36** 题），用于更全面评价 Agent 泛化能力，并经 HITL 精选回流增强 Few-Shot。  
 > 记录时间：2026-08-09  
-> 状态：🚧 **Step 2 金标齐备（36 题）** → 下一步 **Step 3（双轨基线评测）**  
+> 状态：🚧 **P0 已落地并复测** → 下一步 **P1**（字典原文 / 资产列归属）+ 投影纪律；目标 Extra-A ≥33/36  
 > 前置依赖：阶段三评测闭环（EX / 归因 / HITL）；阶段三续一官方 7 题 EX **7/7 = 100%**
 
 ---
@@ -456,6 +456,41 @@ python scripts/baseline_eval.py --path data/extra/Q&A_all.xlsx --no-exact-few-sh
 
 **Step 3 Done =** 官方 + A + B 三份可复现报告落盘。
 
+#### Step 3 实测记录（2026-08-09）
+
+命令（PowerShell 路径含 `&` 须加引号）：
+
+```text
+python scripts/baseline_eval.py --stem logs/eval_reports/official_reg --no-llm-diagnose
+python scripts/baseline_eval.py --path "data/extra/Q&A_all.xlsx" --no-exact-few-shot --max-few-shots 3 --stem logs/eval_reports/extra_all_A --no-llm-diagnose
+python scripts/baseline_eval.py --path "data/extra/Q&A_all.xlsx" --no-exact-few-shot --max-few-shots 0 --stem logs/eval_reports/extra_all_B --no-llm-diagnose
+```
+
+| 轨道 | EX | 分档 EX（简/中/难） | 失败 id | p50/p95 (ms) | 产物 |
+|------|-----|---------------------|---------|--------------|------|
+| 官方（默认可短路） | **7/7 = 100%** | — | （无） | 2225 / 2985 | `official_reg.*` |
+| Extra-A（关短路, fs=3） | **30/36 = 83.3%** | 90% / 85.7% / 75% | E02, M08, M11, H03, H05, H11 | 2899 / 5364 | `extra_all_A.*` |
+| Extra-B（关短路, fs=0） | **25/36 = 69.4%** | 90% / 57.1% / 66.7% | E02, M03–M05, M07–M09, H01, H03, H05, H11 | 3035 / 6197 | `extra_all_B.*` |
+
+**解读（A vs B）**
+
+- A−B ≈ **+14 pp**：现有 Few-Shot 对中档交易/佣金/资金流题帮助明显（B 多挂 M03–M05/M07–M09）。
+- 简单档两边均为 **9/10**（共挂 E02 职业描述匹配）。
+- 官方满分保留；Extra 未达 90%，主缺口见失败清单（交 Step 4）。
+
+**Extra-A 失败摘要（主诊断入口）**
+
+| id | 现象 | 初步归类 |
+|----|------|----------|
+| E02 | row mismatch | 职业名「非公职 离/退休」空格/斜杠或 Join 字典 |
+| M08 | pred 52 vs gold 74 | 出金口径/阈值/窗口 |
+| M11 | L1：`nm_tot_aset` 挂到 `ads_cust_info_d` | 剪枝/投影表错 |
+| H03 | pred 3 列 vs gold 2 列 | 投影纪律（多选列） |
+| H05 | row mismatch | 信用+币种+A股过滤 |
+| H11 | row mismatch | 改写问句（卖出>10万）聚合口径 |
+
+分档未再单独全量重跑（`by_difficulty` 已写入 baseline JSON）。
+
 ### Step 4 — 归因与系统性修补（按需迭代，可多轮）
 
 | 子步 | 动作 | 验证 |
@@ -464,7 +499,76 @@ python scripts/baseline_eval.py --path data/extra/Q&A_all.xlsx --no-exact-few-sh
 | 4.2 | 区分：金标错 vs Agent 系统性（剪枝/口径/Prompt/L1） | 金标错 → 改 extra xlsx；系统错 → 改代码/元数据（**仍不改官方 7**） |
 | 4.3 | 修后只重跑失败子集或全量 Extra-A | EX 有记录的提升轨迹 |
 
-**Step 4 Done =** 主失败模式有结论；无「金标错误未修却怪 Agent」。
+**Step 4 Done（本轮）=** 主失败模式有结论与修复规划；落地改码/复测属下一迭代（4.3）。
+
+#### Step 4.1 证据来源
+
+| 材料 | 路径 |
+|------|------|
+| Extra-A 全量结果 | `logs/eval_reports/extra_all_A_report.json` |
+| 启发式归因 | `logs/eval_reports/extra_all_A_diag.json` / `_review.json` |
+| pred/gold 对照 + 探针 | `logs/eval_reports/extra_all_A_fail_detail.txt`（`data/extra/_analyze_extra_a_fails.py`） |
+
+#### Step 4.2 Extra-A 六题归因（金标均判定为正确，责任在 Agent）
+
+| id | pred 行为（摘要） | gold 口径 | 根因归类 | 责任 |
+|----|-------------------|-----------|----------|------|
+| **E02** | `describe='非公职离退休'`（去空格/斜杠）→ **cnt=0**；金标 `非公职 离/退休`→56 | 字典原文精确匹配 | **字典值未对齐**（NL 省略「 /」） | Agent / Value Descriptor |
+| **M08** | 先过滤日行 `cash_out>10万` 再 `SUM`，得 52 人；金标期间 `SUM(cash_out)>10万`→74 | 期间合计后再阈值 | **日级过滤 vs 期间 HAVING** | Agent / Prompt |
+| **M11** | 把 `nm_tot_aset` 写在 `ads_cust_info_d` 上 → L1 拦截 | 仅 `dws_cust_aset_d` | **列挂错表**（资产列幻觉到客户表） | Agent / Prompt / 剪枝上下文 |
+| **H03** | ① 同 E02 职业串错误 → 0 行；② 多投影 `up_org_name`（3 列 vs 金标 2 列） | `org_name, cnt` | **字典值 + 投影膨胀** | Agent / Prompt |
+| **H05** | `up_prdt_type_id='PT040000'`（股票一级）→ 约 6.42e8；金标 `prdt_type_name='A股'`→约 3.17e8 | 二级「A股」≠ 一级「股票」 | **产品层级混淆** | Agent / Prompt / metrics |
+| **H11** | 日行 `sell_amt>10万` 再 `COUNT DISTINCT`→210；金标 `SUM(sell_amt) HAVING >10万`→310 | 同 M08 模式 | **日级过滤 vs 期间 HAVING** | Agent / Prompt |
+
+**结论：** 6/6 **非金标错误**；无需为过 EX 改 Extra xlsx。共性模式 4 类：
+
+1. **期间合计阈值**（M08、H11；Extra-B 还波及 M03–M05）  
+2. **dim_public 描述字面量**（E02、H03）  
+3. **产品一/二级**（H05）  
+4. **资产列必须落在 aset 表**（M11）+ **投影纪律**（H03）
+
+#### Step 4.3 修复方案（规划，按优先级落地）
+
+| 优先级 | 动作 | 落点 | 覆盖失败 | 验证 |
+|--------|------|------|----------|------|
+| P0 | Prompt「业务约定」增加硬规则：问「合计/期间超过」时，**禁止**对日事实表先 `col > 阈值` 再聚合；须 `GROUP BY pty_id HAVING SUM(col) > 阈值` | `querypilot/agent/prompt.py` | M08, H11（顺带 B 的 M03–M05） | 重跑失败子集 + Extra-A |
+| P0 | Prompt/metrics：点名「A股」用 `prdt_type_name`；「股票/产品大类」用 `up_prdt_type_*` / `PT040000` | `prompt.py` + `metadata/metrics` 已有条目可加一句强调 | H05 | 同上 |
+| P1 | Value Descriptor 或 Prompt：职业等 `describe` **必须与维表原文一致**（含空格、`/`）；或推荐用 `code`/`code_type_id` | `metadata/value_descriptors.yaml` / Prompt；可选 few-shot | E02, H03 | 同上 |
+| P1 | Prompt：`nm_tot_aset` / `fc_pur_aset` / `nm_bal` **仅** `dws_cust_aset_d`；客户表无这些列 | `prompt.py` | M11 | 同上 |
+| P2 | Prompt：问「按营业部分布人数」默认只出 `org_name, cnt`，除非题目要分公司/上级 | `prompt.py` | H03 投影 | 同上 |
+| P2 | Step 5：为「期间 HAVING」「A股 vs 股票」「职业字典原文」各补 1 条**改写问句** few-shot（勿用评测原文） | `candidates_extra.yaml` → HITL | 巩固 P0/P1 | 关短路复测 H11/E02 |
+
+**建议落地顺序**
+
+```text
+1) 改 Prompt 三条硬规则（期间 HAVING / 产品层级 / 资产列归属）
+2) pytest 相关单测（若有 prompt 快照测则更新）
+3) 仅重跑 Extra-A 失败 6 题（关短路 fs=3）→ 目标 ≥5/6
+4) 全量 Extra-A 复测 → 目标 ≥33/36（≈91.7%）以过 90%
+5) 再考虑 Value Descriptor / Few-Shot 回流（Step 5）
+```
+
+**明确不做：** 为抬分改官方 7 题或放宽 Extra 金标口径；不把评测原文写入 `examples.yaml` exact 短路。
+
+**与 Extra-B 的衔接：** B 额外失败多为「无 few-shot 时期间聚合更差」→ P0 规则对 B 同样关键；修完后可选再跑 B 看 A−B 差距是否收窄。
+
+#### Step 4.3 P0 落地记录（2026-08-09）
+
+| 改动 | 文件 |
+|------|------|
+| SYSTEM 规则 16 明确 A股=`prdt_type_name` vs 股票=`PT040000` | `querypilot/agent/prompt.py` |
+| 新增规则 18：期间 `HAVING SUM`；人数须外层 `COUNT`（禁止 `COUNT(*)…GROUP BY pty_id HAVING`） | 同上 |
+| metrics `trade_amt` / `product_type_levels` 同步强调层级与 HAVING | `metadata/metrics/metrics.yaml` |
+
+| 复测 | EX | 说明 |
+|------|-----|------|
+| P0 子集 M08/H05/H11 | **3/3 = 100%** | `extra_p0_retest_p0.json` |
+| 原失败 6 题 | **3/6**（仍挂 E02/M11/H03） | 属 P1，符合预期 |
+| 全量 Extra-A（关短路 fs=3） | **30/36 = 83.3%** | `extra_all_A_p0.*`；P0 原失败已清，新/残留失败见下 |
+
+全量后失败：`E02, M11, M13, H03, H06, H07`  
+- **P1 原定**：E02 / M11 / H03（字典、资产列）  
+- **投影/幻觉（建议并入 P1/P2）**：M13、H06 多出 `up_org_name`（与规则 11「见营业部就出 up_org」过宽有关）；H07 臆造 `tran_amt`
 
 ### Step 5 — Few-Shot 回流（与评测隔离）
 
@@ -564,8 +668,9 @@ flowchart TD
 | Step 2c Medium 14 → `Q&A_medium.xlsx` | ✅ |
 | Step 2d–2e Hard 12 → `Q&A_hard.xlsx` | ✅ |
 | Step 2f `Q&A_all.xlsx` | ✅ |
-| Step 3 官方回归 + Extra-A/B | ⬜ |
-| Step 4 归因与系统性修补 | ⬜ |
+| Step 3 官方回归 + Extra-A/B | ✅ |
+| Step 4 归因与修复规划（4.1–4.2） | ✅ |
+| Step 4.3 P0 Prompt + 复测 | ✅（子集 3/3；全量仍 30/36，待 P1） |
 | Step 5 candidates + HITL 回流 | ⬜ |
 | Step 6 本文收口贴数字 | ⬜ |
 

@@ -33,8 +33,9 @@ SYSTEM_PROMPT = """你是证券客户营销场景下的 DuckDB SQL 专家。根�
 13. 总资产口径：nm_tot_aset + fc_pur_aset（用 coalesce 防空）；交易量口径：buy_amt + sell_amt。
 14. 题目指明季度末/某日快照时，优先用固定 data_dt（如 26年Q1末→20260331），不要默认 MAX(data_dt)，除非题目明确要求「最新」。
 15. 年龄段等分桶标签用简洁区间 <30、[30,50)、[50,60)、[60,)（「大于60」对应 [60,)），不要写成 >=60，不要加「1.」「2.」序号前缀。
-16. 科创板/A股等用 dim_product.prdt_type_name；产品大类分布同时输出 up_prdt_type_name、prdt_type_name 与 sum(mkt_val)。
+16. 产品层级：题目指「A股/科创板/创业板」等二级类型时用 dim_product.prdt_type_name（如 = 'A股'）；指「股票」一级大类时用 up_prdt_type_id='PT040000' 或 up_prdt_type_name；二者不可混用。产品大类分布同时输出 up_prdt_type_name、prdt_type_name 与 sum(mkt_val)。
 17. 问及「盈亏/损益」时禁止臆造盈亏表；用资产快照+ dws_cust_fin_d 推算，投影六列：pty_id, bgn_aset, end_aset, aset_in, aset_out, aset_pft。26年Q1 期初 data_dt='20260101'、期末 '20260331'；aset_in/out 对 cash/tran/assign 流入流出求和；aset_pft = end_nm+end_fc - bgn_nm + bgn_fc + aset_out - aset_in。
+18. 期间合计阈值：问某时间窗内「合计/总额超过」「笔数合计大于」时，先按窗口过滤 data_dt，再 GROUP BY pty_id（或所需键）用 HAVING SUM(...) 判断；禁止在聚合前写日级条件如 sell_amt>阈值、cash_out>阈值。若题目问「有多少人/人数」，须在 HAVING 子查询之外再包一层 COUNT(*)（或 COUNT(DISTINCT pty_id) 的等价两层写法）；禁止 SELECT COUNT(*) ... GROUP BY pty_id HAVING（会得到每人一行而非总人数）。
 """
 
 
