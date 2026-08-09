@@ -16,6 +16,7 @@ from querypilot.agent import (
     generate_sql_from_prompt,
     load_few_shots,
     parse_sql_payload,
+    select_few_shots,
 )
 from querypilot.agent.prompt import SYSTEM_PROMPT
 from querypilot.config import get_settings
@@ -91,18 +92,39 @@ def test_system_prompt_hard_rules():
 
 def test_load_few_shots_has_examples():
     shots = load_few_shots()
-    assert len(shots) >= 3
+    assert len(shots) >= 6
     assert all(s.question and s.sql for s in shots)
     female = next(s for s in shots if "女性" in s.question)
     assert "5000003" in female.sql
+    assert any("产品大类" in s.question for s in shots)
+    assert any("科创板" in s.question or "科创板" in s.sql for s in shots)
 
 
 def test_few_shot_asset_example_joins_on_pty_id_not_data_dt():
     shots = load_few_shots()
-    asset = next(s for s in shots if "总资产" in s.question)
+    asset = next(s for s in shots if "总资产超过" in s.question)
     assert "pty_id" in asset.sql
     assert "JOIN" in asset.sql.upper()
+    assert "fc_pur_aset" in asset.sql
     _assert_joins_without_data_dt(asset.sql)
+
+
+def test_select_few_shots_ranks_by_overlap():
+    shots = load_few_shots()
+    q = "查询26年1月10日到26年2月15日期间，科创板交易量大于25万的客户营业部分布情况"
+    picked = select_few_shots(q, shots, max_few_shots=2)
+    assert len(picked) == 2
+    assert picked[0].question == q
+    assert "科创板" in picked[0].sql
+    assert "up_org_name" in picked[0].sql
+
+
+def test_select_few_shots_prefers_product_category_example():
+    shots = load_few_shots()
+    q = "26年Q1日均资产大于30万的客户，股票交易量大于10万的，其持有的产品属于哪些产品大类"
+    picked = select_few_shots(q, shots, max_few_shots=2)
+    assert picked[0].question == q
+    assert "up_prdt_type_name" in picked[0].sql
 
 
 def test_build_prompt_contains_schema_rules_and_shots(metadata, pruner):
@@ -137,6 +159,14 @@ def test_build_prompt_respects_max_few_shots(metadata, pruner):
     pruned = pruner.prune("客户年龄分布")
     prompt = build_prompt("客户年龄分布", pruned, metadata, max_few_shots=1)
     assert prompt.few_shot_count == 1
+
+
+def test_build_prompt_injects_ranked_board_shot(metadata, pruner):
+    question = "查询26年1月10日到26年2月15日期间，科创板交易量大于25万的客户营业部分布情况"
+    pruned = pruner.prune(question)
+    prompt = build_prompt(question, pruned, metadata, max_few_shots=3)
+    assert "科创板" in prompt.user
+    assert "tran_amt" in prompt.user or "buy_amt" in prompt.user
 
 
 def test_build_prompt_can_disable_few_shots(metadata, pruner):

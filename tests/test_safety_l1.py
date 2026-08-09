@@ -78,6 +78,34 @@ def test_allows_cte_select(metadata):
     assert "WITH" in result.sql.upper()
 
 
+def test_allows_derived_subquery_projected_columns(metadata):
+    """JOIN (SELECT ... AS tran_amt) AS b — b.tran_amt must not be unknown_column."""
+    sql = """
+    SELECT c.up_org_name, c.org_name, SUM(b.tran_amt) AS tran_amt
+    FROM ads_cust_info_d AS a
+    INNER JOIN (
+      SELECT t.pty_id, SUM(t.buy_amt) + SUM(t.sell_amt) AS tran_amt
+      FROM dwd_cust_tran_d AS t
+      INNER JOIN dim_product AS p
+        ON t.prdt_id = p.prdt_id AND p.prdt_type_name = '科创板'
+      WHERE t.data_dt BETWEEN '20260110' AND '20260215'
+      GROUP BY t.pty_id
+      HAVING SUM(t.buy_amt) + SUM(t.sell_amt) > 250000
+    ) AS b ON a.pty_id = b.pty_id
+    LEFT JOIN dim_branch AS c ON a.org_id = c.org_id
+    GROUP BY c.up_org_name, c.org_name
+    """
+    allowed = {
+        "ads_cust_info_d",
+        "dwd_cust_tran_d",
+        "dim_product",
+        "dim_branch",
+    }
+    result = guard_sql(sql, metadata=metadata, allowed_tables=allowed)
+    assert result.ok, result.violations
+    assert not any(v.code == "unknown_column" for v in result.violations)
+
+
 def test_empty_sql(metadata):
     result = guard_sql("   ", metadata=metadata)
     assert not result.ok

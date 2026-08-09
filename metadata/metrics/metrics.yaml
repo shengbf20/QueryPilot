@@ -19,8 +19,8 @@ metrics:
     name: 日均资产
     kind: derived
     tables: [dws_cust_aset_d]
-    formula: "sum(coalesce(nm_tot_aset,0)+coalesce(fc_pur_aset,0))/((to_date('20260331','yyyymmdd')-to_date('20260101','yyyymmdd'))::integer+1)"
-    description: 期间日均资产=区间内每日总资产之和/日历天数（含首尾）。不要对单日或 AVG(日资产) 直接代替日均。
+    formula: "sum(coalesce(nm_tot_aset,0)+coalesce(fc_pur_aset,0))/((DATE '2026-03-31'-DATE '2026-01-01')+1)"
+    description: 期间日均资产=区间内每日总资产之和/日历天数（含首尾）。DuckDB 分母用 DATE 字面量差值；禁止 CAST('20260331' AS DATE)。不要用单日 AVG 代替日均。
 
   - id: trade_amt
     name: 交易量

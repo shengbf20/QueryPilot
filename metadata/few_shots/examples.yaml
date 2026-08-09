@@ -1,4 +1,5 @@
 # Few-shot CoT examples for NL2SQL (marketing analytics)
+# Curated / HITL reflux — ranked by question overlap at prompt time (not file order alone).
 
 examples:
   - question: 有多少年龄大于30岁的女性客户？
@@ -10,21 +11,114 @@ examples:
         AND gender_cd = '5000003'
 
   - question: 总资产超过100万的客户有多少人？
-    rationale: 客户与资产按 pty_id 关联，不要用 data_dt 做 Join；资产取最新快照可用子查询。
+    rationale: 总资产=nm_tot_aset+fc_pur_aset；客户与资产按 pty_id 关联，不用 data_dt 做 Join；未要求「最新」时可用固定快照；多表聚合用 CTE。
     sql: |
-      WITH latest_asset AS (
-        SELECT pty_id, nm_tot_aset
+      WITH aset AS (
+        SELECT
+          pty_id,
+          coalesce(nm_tot_aset, 0) + coalesce(fc_pur_aset, 0) AS total_aset
         FROM dws_cust_aset_d
-        WHERE data_dt = (SELECT MAX(data_dt) FROM dws_cust_aset_d)
+        WHERE data_dt = '20260331'
       )
       SELECT COUNT(*) AS cnt
       FROM ads_cust_info_d AS c
-      JOIN latest_asset AS a ON c.pty_id = a.pty_id
-      WHERE a.nm_tot_aset > 1000000
+      JOIN aset AS a ON c.pty_id = a.pty_id
+      WHERE a.total_aset > 1000000
 
-  - question: 买过产品的客户买入交易额合计是多少？
-    rationale: 交易事实表关联产品维表；按 prdt_id / pty_id 连接。
+  - question: 不同客户年龄段资产分布（小于30；30到50；50到60；大于60）
+    rationale: 分桶标签用 <30/[30,50)/[50,60)/[60,)；资产快照 20260331；只输出年龄段与资产合计两列，勿加客户数。
     sql: |
-      SELECT SUM(t.buy_amt) AS total_buy_amt
-      FROM dwd_cust_tran_d AS t
-      JOIN dim_product AS p ON t.prdt_id = p.prdt_id
+      SELECT
+        CASE
+          WHEN cust_age < 30 THEN '<30'
+          WHEN cust_age >= 30 AND cust_age < 50 THEN '[30,50)'
+          WHEN cust_age >= 50 AND cust_age < 60 THEN '[50,60)'
+          WHEN cust_age >= 60 THEN '[60,)'
+        END AS cust_age_type,
+        SUM(coalesce(b.nm_tot_aset, 0) + coalesce(b.fc_pur_aset, 0)) AS aset
+      FROM ads_cust_info_d AS a
+      LEFT JOIN dws_cust_aset_d AS b
+        ON a.pty_id = b.pty_id AND b.data_dt = '20260331'
+      WHERE a.data_dt = '20260531'
+      GROUP BY 1
+
+  - question: 26年Q1交易过招商银行，且Q1末普通账户持有中国平安的客户有哪些
+    rationale: 输出 pty_id 列表而非 COUNT；产品名经 dim_product.prdt_name；持仓快照 20260331 且 sys_source='nm'。
+    sql: |
+      WITH cust_tran AS (
+        SELECT t.pty_id
+        FROM dwd_cust_tran_d AS t
+        JOIN dim_product AS p ON t.prdt_id = p.prdt_id
+        WHERE t.data_dt BETWEEN '20260101' AND '20260331'
+          AND p.prdt_name = '招商银行'
+          AND p.prdt_type_name = 'A股'
+        GROUP BY t.pty_id
+      )
+      SELECT a.pty_id
+      FROM cust_tran AS a
+      INNER JOIN dwd_cust_hold_d AS h ON a.pty_id = h.pty_id
+      INNER JOIN dim_product AS p2 ON h.prdt_id = p2.prdt_id
+      WHERE h.data_dt = '20260331'
+        AND h.sys_source = 'nm'
+        AND p2.prdt_name = '中国平安'
+        AND p2.prdt_type_name = 'A股'
+
+  - question: 26年Q1日均资产大于30万的客户，股票交易量大于10万的，其持有的产品属于哪些产品大类
+    rationale: HITL 回流金标结构；日均分母用 DATE 字面量；股票交易 up_prdt_type_id='PT040000'；最终三列 up_prdt_type_name/prdt_type_name/sum(mkt_val)。
+    sql: |
+      WITH cust_avg_30 AS (
+        SELECT
+          pty_id,
+          ROUND(
+            SUM(coalesce(nm_tot_aset, 0) + coalesce(fc_pur_aset, 0))
+              / ((DATE '2026-03-31' - DATE '2026-01-01')::INTEGER + 1),
+            2
+          ) AS avg_aset
+        FROM dws_cust_aset_d
+        GROUP BY pty_id
+        HAVING SUM(coalesce(nm_tot_aset, 0) + coalesce(fc_pur_aset, 0))
+          / ((DATE '2026-03-31' - DATE '2026-01-01')::INTEGER + 1) > 300000
+      ),
+      cust_tran AS (
+        SELECT a.pty_id, SUM(b.buy_amt) + SUM(b.sell_amt) AS tran_amt
+        FROM dws_cust_aset_d AS a
+        LEFT JOIN dwd_cust_tran_d AS b
+          ON a.pty_id = b.pty_id
+         AND b.data_dt BETWEEN '20260101' AND '20260331'
+        INNER JOIN dim_product AS c
+          ON b.prdt_id = c.prdt_id AND c.up_prdt_type_id = 'PT040000'
+        GROUP BY a.pty_id
+        HAVING SUM(b.buy_amt) + SUM(b.sell_amt) > 100000
+      )
+      SELECT
+        c.up_prdt_type_name,
+        c.prdt_type_name,
+        SUM(mkt_val) AS mkt_val
+      FROM cust_tran AS a
+      INNER JOIN dwd_cust_hold_d AS b
+        ON a.pty_id = b.pty_id AND b.data_dt = '20260331'
+      INNER JOIN dim_product AS c ON b.prdt_id = c.prdt_id
+      GROUP BY c.prdt_type_name, c.up_prdt_type_name
+
+  - question: 查询26年1月10日到26年2月15日期间，科创板交易量大于25万的客户营业部分布情况
+    rationale: 科创板用 prdt_type_name（二级）；交易量=buy+sell；营业部分布输出 up_org_name、org_name、sum(tran_amt)，不要改成 COUNT。
+    sql: |
+      SELECT
+        c.up_org_name,
+        c.org_name,
+        SUM(b.tran_amt) AS tran_amt
+      FROM ads_cust_info_d AS a
+      INNER JOIN (
+        SELECT
+          t.pty_id,
+          SUM(t.buy_amt) + SUM(t.sell_amt) AS tran_amt
+        FROM dwd_cust_tran_d AS t
+        INNER JOIN dim_product AS p
+          ON t.prdt_id = p.prdt_id
+         AND p.prdt_type_name = '科创板'
+        WHERE t.data_dt BETWEEN '20260110' AND '20260215'
+        GROUP BY t.pty_id
+        HAVING SUM(t.buy_amt) + SUM(t.sell_amt) > 250000
+      ) AS b ON a.pty_id = b.pty_id
+      LEFT JOIN dim_branch AS c ON a.org_id = c.org_id
+      GROUP BY c.up_org_name, c.org_name

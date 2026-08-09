@@ -126,6 +126,9 @@ def guard_sql(
             )
 
     cte_names = {cte.alias_or_name for cte in tree.find_all(exp.CTE)}
+    subquery_aliases = _collect_subquery_aliases(tree)
+    # Derived tables / CTEs expose computed columns not in the physical catalog.
+    virtual_relations = cte_names | subquery_aliases
     physical_tables, alias_map = _collect_tables(tree, cte_names)
     select_aliases = _collect_select_aliases(tree)
 
@@ -145,7 +148,7 @@ def guard_sql(
                 _fix_columns(
                     tree,
                     alias_map,
-                    cte_names,
+                    virtual_relations,
                     catalog,
                     scope_tables,
                     min_similarity,
@@ -155,7 +158,7 @@ def guard_sql(
         for _col, _table_hint, message in _unknown_columns(
             tree,
             alias_map,
-            cte_names,
+            virtual_relations,
             catalog,
             scope_tables,
             select_aliases,
@@ -207,6 +210,16 @@ def _collect_tables(
     return physical, alias_map
 
 
+def _collect_subquery_aliases(tree: exp.Expression) -> set[str]:
+    """Aliases of derived tables: ``JOIN (SELECT ...) AS b``."""
+    names: set[str] = set()
+    for sub in tree.find_all(exp.Subquery):
+        alias = sub.alias
+        if alias:
+            names.add(alias)
+    return names
+
+
 def _collect_select_aliases(tree: exp.Expression) -> set[str]:
     """Names introduced by SELECT ... AS alias (valid in ORDER BY / outer refs)."""
     return {alias.alias for alias in tree.find_all(exp.Alias) if alias.alias}
@@ -235,7 +248,7 @@ def _candidate_columns(
 def _fix_columns(
     tree: exp.Expression,
     alias_map: dict[str, str],
-    cte_names: set[str],
+    virtual_relations: set[str],
     catalog: dict[str, set[str]],
     scope_tables: set[str],
     min_similarity: float,
@@ -250,8 +263,10 @@ def _fix_columns(
             continue
 
         table_ref = column.table or None
+        if table_ref and table_ref in virtual_relations:
+            continue
         resolved = alias_map.get(table_ref, table_ref) if table_ref else None
-        if resolved in cte_names:
+        if resolved in virtual_relations:
             continue
 
         candidates = _candidate_columns(catalog, scope_tables, resolved)
@@ -273,7 +288,7 @@ def _fix_columns(
 def _unknown_columns(
     tree: exp.Expression,
     alias_map: dict[str, str],
-    cte_names: set[str],
+    virtual_relations: set[str],
     catalog: dict[str, set[str]],
     scope_tables: set[str],
     select_aliases: set[str],
@@ -287,8 +302,10 @@ def _unknown_columns(
         if _is_select_alias_ref(column, select_aliases):
             continue
         table_ref = column.table or None
+        if table_ref and table_ref in virtual_relations:
+            continue
         resolved = alias_map.get(table_ref, table_ref) if table_ref else None
-        if resolved in cte_names:
+        if resolved in virtual_relations:
             continue
         candidates = _candidate_columns(catalog, scope_tables, resolved)
         if not candidates:
