@@ -34,6 +34,30 @@ def main(argv: list[str] | None = None) -> int:
         help="optional case limit (default: all gold cases)",
     )
     parser.add_argument(
+        "--path",
+        type=str,
+        default=None,
+        help="Gold Q&A xlsx path (default: data/Q&A.xlsx)",
+    )
+    parser.add_argument(
+        "--paths",
+        type=str,
+        action="append",
+        default=None,
+        help="Additional gold xlsx path(s); repeatable",
+    )
+    parser.add_argument(
+        "--max-few-shots",
+        type=int,
+        default=3,
+        help="Max few-shot examples passed to ask (default: 3)",
+    )
+    parser.add_argument(
+        "--no-exact-few-shot",
+        action="store_true",
+        help="Disable exact-match few-shot short-circuit",
+    )
+    parser.add_argument(
         "--stem",
         type=str,
         default=None,
@@ -71,7 +95,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"baseline md: {md_path}")
         return 0
 
-    report = run_eval(limit=args.limit)
+    report = run_eval(
+        path=args.path,
+        paths=args.paths,
+        limit=args.limit,
+        max_few_shots=args.max_few_shots,
+        allow_exact_few_shot=not args.no_exact_few_shot,
+    )
     print(format_eval_report(report))
 
     diagnoses = diagnose_failures(report, use_llm=use_llm)

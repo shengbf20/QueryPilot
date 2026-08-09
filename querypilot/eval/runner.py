@@ -19,7 +19,7 @@ import duckdb
 from openai import OpenAI
 
 from querypilot.config import get_settings
-from querypilot.eval.dataset import load_qa_cases
+from querypilot.eval.dataset import load_qa_cases, load_qa_cases_many
 from querypilot.eval.execution_match import compare_results
 from querypilot.eval.models import CaseEvalResult, EvalCase, EvalReport, TimingInfo
 
@@ -208,6 +208,7 @@ def run_eval(
     cases: Sequence[EvalCase] | None = None,
     *,
     path: Path | str | None = None,
+    paths: Sequence[Path | str] | None = None,
     limit: int | None = None,
     ask_fn: AskFn | None = None,
     execute_fn: ExecuteFn | None = None,
@@ -221,9 +222,19 @@ def run_eval(
 
     ``save_path``: ``True`` → timestamped file under ``logs/eval_reports/``;
     a path string/Path → write there; ``None``/``False`` → do not save.
+
+    Load order when ``cases`` is omitted: ``paths`` (if set) else single ``path``
+    (default ``data/Q&A.xlsx``). Kwargs such as ``max_few_shots`` /
+    ``allow_exact_few_shot`` are forwarded to ``ask`` when using the default ask.
     """
     if cases is None:
-        cases = load_qa_cases(path)
+        if paths:
+            path_list = list(paths)
+            if path is not None:
+                path_list = [path, *path_list]
+            cases = load_qa_cases_many(path_list)
+        else:
+            cases = load_qa_cases(path)
     case_list = list(cases)
     if limit is not None:
         case_list = case_list[: max(0, limit)]

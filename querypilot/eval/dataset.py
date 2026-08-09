@@ -127,10 +127,28 @@ def load_qa_cases(path: Path | str | None = None) -> list[EvalCase]:
             f"(got: {list(headers)}; mapped: {sorted(colmap)})"
         )
 
+    mapped_idxs = set(colmap.values())
     records: list[dict[str, Any]] = []
     for row in data_rows:
         record: dict[str, Any] = {}
         for field, idx in colmap.items():
             record[field] = row[idx] if idx < len(row) else None
+        # Non-canonical columns (e.g. theme) → EvalCase.extras via cases_from_records.
+        for idx, header in enumerate(headers):
+            if idx in mapped_idxs:
+                continue
+            key = _cell_str(header) or f"col_{idx}"
+            if idx < len(row):
+                record[key] = row[idx]
         records.append(record)
     return cases_from_records(records)
+
+
+def load_qa_cases_many(paths: Sequence[Path | str]) -> list[EvalCase]:
+    """Load and concatenate gold cases from multiple workbooks (file order preserved)."""
+    if not paths:
+        raise ValueError("load_qa_cases_many requires at least one path")
+    cases: list[EvalCase] = []
+    for path in paths:
+        cases.extend(load_qa_cases(path))
+    return cases

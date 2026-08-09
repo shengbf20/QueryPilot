@@ -302,6 +302,26 @@ def test_generate_sql_from_prompt_with_fake_client(metadata, pruner):
     assert kwargs["messages"][0]["content"] == SYSTEM_PROMPT
 
 
+def test_generate_sql_allow_exact_few_shot_false_calls_llm(metadata, pruner):
+    """Extra generalization eval must not short-circuit on exact few-shot match."""
+    q = "钻石卡男性客户，年龄大于40岁，持有比亚迪市值超过1000元，他在26年Q1的盈亏情况"
+    pruned = pruner.prune(q)
+    client = _FakeClient(
+        '{"sql":"SELECT 1 AS n","rationale":"forced llm","uses_cte":false}'
+    )
+    result = generate_sql(
+        q,
+        metadata=metadata,
+        pruned=pruned,
+        include_values=False,
+        client=client,  # type: ignore[arg-type]
+        allow_exact_few_shot=False,
+    )
+    assert client.chat.completions.last_kwargs is not None
+    assert result.raw.get("source") != "few_shot_exact"
+    assert "SELECT 1" in result.sql
+
+
 def test_generate_sql_end_to_end_with_fake_client(metadata):
     client = _FakeClient(
         '{"sql":"SELECT COUNT(*) AS cnt FROM ads_cust_info_d WHERE cust_age > 30",'

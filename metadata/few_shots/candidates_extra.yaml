@@ -1,0 +1,14 @@
+# Extra 评测回流候选（阶段三续二 Step 5）
+# 与 examples.yaml 隔离：此处先存「改写问句 + SQL」，HITL 确认后再 reflux。
+# 评测集 data/extra/Q&A_*.xlsx 的原文问句不得原样写入 examples.yaml。
+
+candidates: []
+
+# 条目形状（Step 5 填写）:
+# - source_case_id: E04
+#   question: 改写后的自然语言问句（≠ 评测原文）
+#   rationale: 简短口径说明
+#   sql: |
+#     SELECT ...
+#   theme: total_aset_threshold
+#   status: pending   # pending | approved | rejected

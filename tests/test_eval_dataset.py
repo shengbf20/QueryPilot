@@ -8,7 +8,13 @@ import pytest
 from openpyxl import Workbook
 
 from querypilot.config import get_settings
-from querypilot.eval import EvalCase, cases_from_records, default_qa_path, load_qa_cases
+from querypilot.eval import (
+    EvalCase,
+    cases_from_records,
+    default_qa_path,
+    load_qa_cases,
+    load_qa_cases_many,
+)
 
 
 def test_default_qa_path_points_under_data():
@@ -103,9 +109,9 @@ def test_load_qa_cases_from_temp_xlsx(tmp_path: Path):
     path = tmp_path / "qa.xlsx"
     wb = Workbook()
     ws = wb.active
-    ws.append(["序号", "问题", "SQL", "难度"])
-    ws.append([1, "女性客户数", "SELECT COUNT(*) FROM t", "simple"])
-    ws.append([2, "资产汇总", "SELECT SUM(x) FROM t", None])
+    ws.append(["序号", "问题", "SQL", "难度", "theme"])
+    ws.append([1, "女性客户数", "SELECT COUNT(*) FROM t", "simple", "gender_count"])
+    ws.append([2, "资产汇总", "SELECT SUM(x) FROM t", None, None])
     wb.save(path)
 
     cases = load_qa_cases(path)
@@ -114,7 +120,39 @@ def test_load_qa_cases_from_temp_xlsx(tmp_path: Path):
     assert cases[0].question == "女性客户数"
     assert "COUNT(*)" in cases[0].gold_sql
     assert cases[0].difficulty == "simple"
+    assert cases[0].extras.get("theme") == "gender_count"
     assert cases[1].gold_sql.startswith("SELECT SUM")
+
+
+def test_load_qa_cases_many_merges_in_order(tmp_path: Path):
+    def _write(name: str, rows: list[list]) -> Path:
+        path = tmp_path / name
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["序号", "问题", "SQL", "难度", "theme"])
+        for row in rows:
+            ws.append(row)
+        wb.save(path)
+        return path
+
+    easy = _write(
+        "easy.xlsx",
+        [["E01", "q1", "SELECT 1", "简单", "status_filter"]],
+    )
+    medium = _write(
+        "medium.xlsx",
+        [["M01", "q2", "SELECT 2", "中等", "credit_hold"]],
+    )
+    cases = load_qa_cases_many([easy, medium])
+    assert [c.id for c in cases] == ["E01", "M01"]
+    assert cases[0].difficulty == "简单"
+    assert cases[0].extras.get("theme") == "status_filter"
+    assert cases[1].extras.get("theme") == "credit_hold"
+
+
+def test_load_qa_cases_many_requires_paths():
+    with pytest.raises(ValueError, match="at least one path"):
+        load_qa_cases_many([])
 
 
 def test_load_qa_cases_extended_aliases_xlsx(tmp_path: Path):

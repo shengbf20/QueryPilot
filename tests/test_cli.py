@@ -124,8 +124,10 @@ def test_build_parser_eval_defaults():
     assert args.command == "eval"
     assert args.limit is None
     assert args.path is None
+    assert args.paths is None
     assert args.max_rows is None
     assert args.max_few_shots == 3
+    assert args.no_exact_few_shot is False
     assert args.output is None
     assert args.no_save is False
     assert args.diagnose is False
@@ -144,10 +146,15 @@ def test_build_parser_eval_options():
             "5",
             "--path",
             "data/Q&A.xlsx",
+            "--paths",
+            "data/extra/Q&A_easy.xlsx",
+            "--paths",
+            "data/extra/Q&A_medium.xlsx",
             "--max-rows",
             "50",
             "--max-few-shots",
             "2",
+            "--no-exact-few-shot",
             "--output",
             "out.json",
             "--no-save",
@@ -155,8 +162,13 @@ def test_build_parser_eval_options():
     )
     assert args.limit == 5
     assert args.path == "data/Q&A.xlsx"
+    assert args.paths == [
+        "data/extra/Q&A_easy.xlsx",
+        "data/extra/Q&A_medium.xlsx",
+    ]
     assert args.max_rows == 50
     assert args.max_few_shots == 2
+    assert args.no_exact_few_shot is True
     assert args.output == "out.json"
     assert args.no_save is True
 
@@ -243,9 +255,11 @@ def test_main_eval_uses_run_eval(capsys, tmp_path: Path):
     assert code == 0
     mocked.assert_called_once_with(
         path="data/Q&A.xlsx",
+        paths=None,
         limit=2,
         max_rows=10,
         max_few_shots=1,
+        allow_exact_few_shot=True,
     )
     printed = capsys.readouterr().out
     assert "EX: 1/1 = 100.0%" in printed

@@ -30,6 +30,7 @@ def ask(
     max_rows: int = 1000,
     max_few_shots: int = 3,
     include_values: bool = True,
+    allow_exact_few_shot: bool = True,
 ) -> PipelineResult:
     """Run the full QueryPilot retrieval pipeline for one natural-language question."""
     t_all = time.perf_counter()
@@ -66,6 +67,7 @@ def ask(
             include_values=include_values,
             max_few_shots=max_few_shots,
             client=client,
+            allow_exact_few_shot=allow_exact_few_shot,
         )
     except Exception as exc:  # noqa: BLE001
         timing.generate_ms = _elapsed_ms(t0)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -385,6 +386,55 @@ def test_run_eval_save_path(tmp_path):
     loaded = load_eval_report(out)
     assert loaded["failed_ids"] == []
     assert loaded["total"] == 1
+
+
+def test_run_eval_forwards_allow_exact_few_shot(monkeypatch):
+    """Default ask path must receive allow_exact_few_shot from run_eval kwargs."""
+    seen: dict = {}
+
+    def _fake_ask(question, **kwargs):
+        seen.update(kwargs)
+        return _pipe(ok=True, sql="SELECT 1", columns=["n"], rows=[(1,)])
+
+    monkeypatch.setattr("querypilot.agent.pipeline.ask", _fake_ask)
+    cases = [EvalCase(id="1", question="q", gold_sql="SELECT 1")]
+    report = run_eval(
+        cases=cases,
+        execute_fn=_exec(["n"], [(1,)]),
+        allow_exact_few_shot=False,
+        max_few_shots=0,
+    )
+    assert report.matched_count == 1
+    assert seen.get("allow_exact_few_shot") is False
+    assert seen.get("max_few_shots") == 0
+
+
+def test_run_eval_paths_loads_many(tmp_path, monkeypatch):
+    from openpyxl import Workbook
+
+    from querypilot.eval.dataset import load_qa_cases_many
+
+    def _write(name: str, case_id: str) -> Path:
+        path = tmp_path / name
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["序号", "问题", "SQL"])
+        ws.append([case_id, f"q-{case_id}", "SELECT 1"])
+        wb.save(path)
+        return path
+
+    p1 = _write("a.xlsx", "E01")
+    p2 = _write("b.xlsx", "M01")
+    loaded = load_qa_cases_many([p1, p2])
+    assert [c.id for c in loaded] == ["E01", "M01"]
+
+    report = run_eval(
+        paths=[p1, p2],
+        ask_fn=lambda _q: _pipe(ok=True, sql="SELECT 1", columns=["n"], rows=[(1,)]),
+        execute_fn=_exec(["n"], [(1,)]),
+    )
+    assert report.total == 2
+    assert report.failed_ids == []
 
 
 def test_run_eval_save_path_true_uses_default_report_dir(tmp_path, monkeypatch):

@@ -45,7 +45,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--path",
         type=str,
         default=None,
-        help="Gold Q&A xlsx path (default: data/Q&A.xlsx)",
+        help="Gold Q&A xlsx path (default: data/Q&A.xlsx); combine with --paths",
+    )
+    eval_parser.add_argument(
+        "--paths",
+        type=str,
+        action="append",
+        default=None,
+        help="Additional gold Q&A xlsx path(s); repeatable; merged in order after --path",
     )
     eval_parser.add_argument(
         "--max-rows",
@@ -58,6 +65,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=3,
         help="Max few-shot examples passed to ask (default: 3)",
+    )
+    eval_parser.add_argument(
+        "--no-exact-few-shot",
+        action="store_true",
+        help="Disable exact-match few-shot short-circuit (for Extra generalization eval)",
     )
     eval_parser.add_argument(
         "--output",
@@ -253,9 +265,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         report = run_eval(
             path=args.path,
+            paths=args.paths,
             limit=args.limit,
             max_rows=args.max_rows,
             max_few_shots=args.max_few_shots,
+            allow_exact_few_shot=not args.no_exact_few_shot,
         )
         print(format_eval_report(report))
         if not args.no_save:

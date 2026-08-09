@@ -2,7 +2,7 @@
 
 > 记录范围：在不改动官方 `data/Q&A.xlsx`（7 题）前提下，规划并落地 Extra 评测集（easy:medium:hard = **10:14:12**，共 **36** 题），用于更全面评价 Agent 泛化能力，并经 HITL 精选回流增强 Few-Shot。  
 > 记录时间：2026-08-09  
-> 状态：📋 **规划中**（本文档为完整方案；xlsx 落盘 / 工程改造 / EX 基线尚未执行）  
+> 状态：🚧 **Step 1 完成** → 下一步 **Step 2a/2b（探数 + Easy 金标）**；xlsx / EX 基线尚未执行  
 > 前置依赖：阶段三评测闭环（EX / 归因 / HITL）；阶段三续一官方 7 题 EX **7/7 = 100%**
 
 ---
@@ -295,6 +295,63 @@ querypilot eval --paths data/extra/Q&A_all.xlsx --no-exact-few-shot --max-few-sh
 | 创建目录 `data/extra/`、`metadata/few_shots/candidates_extra.yaml` 占位（空 examples 列表亦可） | 目录存在 |
 | 本文状态保持「规划中」；开干后在文首进度旁注「Step N 进行中」 | — |
 
+#### Step 0 实测记录（2026-08-09）
+
+| 检查项 | 结果 |
+|--------|------|
+| `data/Q&A.xlsx` | ✅ 存在；`load_qa_cases` → **7** 题（id 1–7）；**未修改** |
+| `load_metadata()` | ✅ 8 表：`ads_cust_info_d`, `dim_branch`, `dim_product`, `dim_public`, `dwd_cust_hold_d`, `dwd_cust_tran_d`, `dws_cust_aset_d`, `dws_cust_fin_d` |
+| DuckDB `db/competition.duckdb` | ✅ 存在；`SELECT COUNT(*) FROM ads_cust_info_d` → **500** |
+| `data/extra/` 脚手架 | ✅ 见下节「文件框架」 |
+| `candidates_extra.yaml` | ✅ `candidates: []` 占位 |
+| 官方 CSV / 金标 | ✅ 约定只读；Extra 仅写 `data/extra/` 与 few-shot 候选 |
+
+#### 文件框架 / 脚手架规划（Step 0 冻结）
+
+```text
+source/
+├── data/
+│   ├── Q&A.xlsx                    # 官方 7 题只读（禁止改）
+│   ├── *.csv                       # 原始脱敏表只读（禁止改）
+│   └── extra/                      # Extra 金标根目录（本阶段可写）
+│       ├── README.md               # ✅ 目录约定
+│       ├── entities.md             # ✅ Step 2a 探数表（占位）
+│       ├── Q&A_easy.xlsx           # ⬜ Step 2b
+│       ├── Q&A_medium.xlsx         # ⬜ Step 2c
+│       ├── Q&A_hard.xlsx           # ⬜ Step 2d–2e
+│       └── Q&A_all.xlsx            # ⬜ Step 2f
+├── metadata/
+│   ├── few_shots/
+│   │   ├── examples.yaml           # 正式 Few-Shot（Step 5 才追加改写题）
+│   │   └── candidates_extra.yaml   # ✅ Step 5 候选池（空列表）
+│   ├── tables/ / metrics/ …        # 既有元数据；系统性修补时按需改（非 Step 0）
+│   └── …
+├── querypilot/                     # Step 1 改动落点（尚未改）
+│   ├── eval/dataset.py             # load_qa_cases_many
+│   ├── eval/runner.py              # 多 path
+│   ├── agent/pipeline.py           # allow_exact_few_shot 透传
+│   └── cli.py                      # --paths / --no-exact-few-shot
+├── scripts/baseline_eval.py        # Step 1：--path(s) / 关短路
+├── tests/                          # Step 1：dataset / runner / cli 单测
+└── logs/
+    ├── 03-阶段三续二-….md          # 本文
+    └── eval_reports/               # Step 3 产物（gitignore）
+        ├── official_reg_*
+        ├── extra_all_A_*
+        └── extra_all_B_*
+```
+
+**写入边界**
+
+| 可写 | 不可写 |
+|------|--------|
+| `data/extra/**` | `data/Q&A.xlsx`、`data/*.csv` |
+| `metadata/few_shots/candidates_extra.yaml` | 盲目全量改 `examples.yaml`（仅 Step 5 HITL） |
+| `logs/03-阶段三续二-*.md`、`logs/eval_reports/` | 把 Extra 满分叙事替换官方 7 题 |
+| Step 1 所列工程文件 | 与续二无关的大重构 |
+
+**xlsx 表头脚手架（落盘时遵守）**：`序号, 问题, SQL, 难度, theme`；序号用 `E01`/`M01`/`H01` 前缀。
+
 ### Step 1 — 工程底座（阻塞评测命令，优先做）
 
 | 子步 | 动作 | 验证 |
@@ -306,6 +363,23 @@ querypilot eval --paths data/extra/Q&A_all.xlsx --no-exact-few-shot --max-few-sh
 | 1.5 | 导出与回归：`pytest tests/test_eval_dataset.py tests/test_eval_runner.py`（及相关 CLI 测） | 全绿 |
 
 **Step 1 Done =** 可用一条命令对任意 xlsx 关短路跑 eval（哪怕先只有 1 道样例题）。
+
+#### Step 1 实测记录（2026-08-09）
+
+| 子步 | 结果 |
+|------|------|
+| 1.1 `load_qa_cases_many` + xlsx `theme`→extras | ✅ |
+| 1.2 `ask(..., allow_exact_few_shot=)` → `generate_sql` | ✅ |
+| 1.3 CLI `--paths` / `--no-exact-few-shot` → `run_eval` | ✅ |
+| 1.4 `baseline_eval.py` 同名参数 | ✅ |
+| 1.5 pytest | ✅ `test_eval_dataset` / `test_eval_runner` / `test_cli` / exact-few-shot 相关 **66 passed** |
+
+示例（待 Extra xlsx 落盘后）：
+
+```text
+querypilot eval --paths data/extra/Q&A_all.xlsx --no-exact-few-shot --max-few-shots 3 --no-save
+python scripts/baseline_eval.py --path data/extra/Q&A_all.xlsx --no-exact-few-shot --stem logs/eval_reports/extra_all_A
+```
 
 ### Step 2 — 金标生产（按档；每档「问句冻结 → SQL → 执行非空 → 写入 xlsx」）
 
@@ -434,8 +508,8 @@ flowchart TD
 | Step / 项 | 状态 |
 |-----------|------|
 | 规划文档（本文 §〇–§七） | ✅ |
-| Step 0 开工检查 | ⬜ |
-| Step 1 工程底座（多 path / 关短路 / pytest） | ⬜ |
+| Step 0 开工检查 + 脚手架 | ✅ |
+| Step 1 工程底座（多 path / 关短路 / pytest） | ✅ |
 | Step 2a 探数与实体阈值表 | ⬜ |
 | Step 2b Easy 10 → `Q&A_easy.xlsx` | ⬜ |
 | Step 2c Medium 14 → `Q&A_medium.xlsx` | ⬜ |

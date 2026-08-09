@@ -8,7 +8,12 @@ from querypilot.eval.baseline import (
     load_baseline,
     save_baseline,
 )
-from querypilot.eval.dataset import cases_from_records, default_qa_path, load_qa_cases
+from querypilot.eval.dataset import (
+    cases_from_records,
+    default_qa_path,
+    load_qa_cases,
+    load_qa_cases_many,
+)
 from querypilot.eval.eval_agent import (
     ERROR_TYPES,
     classify_heuristic,
@@ -85,6 +90,7 @@ __all__ = [
     "load_baseline",
     "load_eval_report",
     "load_qa_cases",
+    "load_qa_cases_many",
     "load_review_queue",
     "percentile",
     "reject_ticket",
