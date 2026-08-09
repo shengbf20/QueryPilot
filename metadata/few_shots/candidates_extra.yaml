@@ -1,14 +1,107 @@
 # Extra 评测回流候选（阶段三续二 Step 5）
-# 与 examples.yaml 隔离：此处先存「改写问句 + SQL」，HITL 确认后再 reflux。
+# 与 examples.yaml 隔离：此处存「改写问句 + SQL」，HITL/脚本确认后再 reflux。
 # 评测集 data/extra/Q&A_*.xlsx 的原文问句不得原样写入 examples.yaml。
 
-candidates: []
+candidates:
+  - source_case_id: E02
+    theme: occupation_filter
+    status: approved
+    question: 统计职业为非公职离退休且性别为女的客户人数
+    rationale: >
+      职业优先 prof_cd='7000032'（code_type_id=700）；若用 describe 须原文「非公职 离/退休」。
+      性别可用 gender_cd='5000003'。单表编码过滤即可。
+    sql: |
+      SELECT COUNT(*) AS cnt
+      FROM ads_cust_info_d
+      WHERE gender_cd = '5000003'
+        AND prof_cd = '7000032'
 
-# 条目形状（Step 5 填写）:
-# - source_case_id: E04
-#   question: 改写后的自然语言问句（≠ 评测原文）
-#   rationale: 简短口径说明
-#   sql: |
-#     SELECT ...
-#   theme: total_aset_threshold
-#   status: pending   # pending | approved | rejected
+  - source_case_id: M01
+    theme: credit_hold
+    status: approved
+    question: 在信用账户上持有证券三六零的客户人数是多少
+    rationale: >
+      信用账户用 sys_source='fc'；产品名经 dim_product.prdt_name；持仓快照默认 20260331；
+      COUNT(DISTINCT pty_id)。
+    sql: |
+      SELECT COUNT(DISTINCT h.pty_id) AS cnt
+      FROM dwd_cust_hold_d AS h
+      JOIN dim_product AS p ON h.prdt_id = p.prdt_id
+      WHERE h.data_dt = '20260331'
+        AND h.sys_source = 'fc'
+        AND p.prdt_name = '三六零'
+
+  - source_case_id: M05
+    theme: commission
+    status: approved
+    question: 26年Q1买卖佣金合计超过一百元的客户人数是多少
+    rationale: >
+      期间合计用 GROUP BY pty_id HAVING SUM(buy_rake+sell_rake)；人数在外层 COUNT(*)；
+      禁止日级 rake>阈值后再聚合。
+    sql: |
+      SELECT COUNT(*) AS cnt
+      FROM (
+        SELECT pty_id
+        FROM dwd_cust_tran_d
+        WHERE data_dt BETWEEN '20260101' AND '20260331'
+        GROUP BY pty_id
+        HAVING SUM(coalesce(buy_rake, 0) + coalesce(sell_rake, 0)) > 100
+      ) AS t
+
+  - source_case_id: M07
+    theme: cash_in_large
+    status: approved
+    question: 列出26年一季度现金流入合计大于十万的客户号
+    rationale: >
+      dws_cust_fin_d；HAVING SUM(cash_in)；「有哪些/列出客户」只投影 pty_id，勿附带合计列。
+    sql: |
+      SELECT pty_id
+      FROM dws_cust_fin_d
+      WHERE data_dt BETWEEN '20260101' AND '20260331'
+      GROUP BY pty_id
+      HAVING SUM(coalesce(cash_in, 0)) > 100000
+      ORDER BY pty_id
+
+  - source_case_id: M09
+    theme: fund_or_bond_type
+    status: approved
+    question: 截止2026年3月31日，一级分类为开放式基金的持仓市值总和是多少
+    rationale: >
+      开放式基金是一级大类：up_prdt_type_id='PT050000'（或 up_prdt_type_name）；
+      禁止 prdt_type_name='开放式基金'（二级无此名）。
+    sql: |
+      SELECT SUM(coalesce(h.mkt_val, 0)) AS mkt_sum
+      FROM dwd_cust_hold_d AS h
+      JOIN dim_product AS p ON h.prdt_id = p.prdt_id
+      WHERE h.data_dt = '20260331'
+        AND p.up_prdt_type_id = 'PT050000'
+
+  - source_case_id: M11
+    theme: nm_vs_total
+    status: approved
+    question: 快照20260331上本币资产不超过50万但本外币合计总资产超过50万的客户人数
+    rationale: >
+      资产列仅 dws_cust_aset_d；本币=nm_tot_aset，总资产=nm+fc；两门槛须分别引用，勿混为同一表达式。
+    sql: |
+      SELECT COUNT(*) AS cnt
+      FROM dws_cust_aset_d
+      WHERE data_dt = '20260331'
+        AND coalesce(nm_tot_aset, 0) <= 500000
+        AND coalesce(nm_tot_aset, 0) + coalesce(fc_pur_aset, 0) > 500000
+
+  - source_case_id: M13
+    theme: branch_trade_amt
+    status: approved
+    question: 按营业部汇总26年一季度客户买卖金额合计（只需营业部名称与金额）
+    rationale: >
+      仅问营业部时投影 org_name + trade_amt（buy+sell）；不要加 up_org_name；别名用 trade_amt。
+    sql: |
+      SELECT
+        b.org_name,
+        SUM(coalesce(t.buy_amt, 0) + coalesce(t.sell_amt, 0)) AS trade_amt
+      FROM dwd_cust_tran_d AS t
+      JOIN ads_cust_info_d AS c ON t.pty_id = c.pty_id
+      JOIN dim_branch AS b ON c.org_id = b.org_id
+      WHERE t.data_dt BETWEEN '20260101' AND '20260331'
+      GROUP BY b.org_name
+      ORDER BY trade_amt DESC, b.org_name

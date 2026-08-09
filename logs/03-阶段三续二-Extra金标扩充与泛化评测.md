@@ -2,7 +2,7 @@
 
 > 记录范围：在不改动官方 `data/Q&A.xlsx`（7 题）前提下，规划并落地 Extra 评测集（easy:medium:hard = **10:14:12**，共 **36** 题），用于更全面评价 Agent 泛化能力，并经 HITL 精选回流增强 Few-Shot。  
 > 记录时间：2026-08-09  
-> 状态：🚧 **P1 + M09 产品层级补强已落地** → Extra-A（fs=3）**36/36**；Easy/Medium **24/24**；下一步 Step 5 Few-Shot 回流 / 收口  
+> 状态：✅ **阶段三续二闭环** — 官方默认 **7/7**；Extra-A（关短路 fs=3）**36/36**；Extra-B（fs=0）**34/36**；Few-Shot 15 条（含 7 条改写回流）  
 > 前置依赖：阶段三评测闭环（EX / 归因 / HITL）；阶段三续一官方 7 题 EX **7/7 = 100%**
 
 ---
@@ -616,6 +616,16 @@ python scripts/baseline_eval.py --path "data/extra/Q&A_all.xlsx" --no-exact-few-
 
 **Step 5 Done =** 正式 few-shot 增强且 Extra 评测集未被短路污染。
 
+#### Step 5 落地记录（2026-08-09）
+
+| 项 | 说明 |
+|----|------|
+| 候选 | 7 条 `status: approved` → [`candidates_extra.yaml`](../metadata/few_shots/candidates_extra.yaml) |
+| 主题 | E02 职业码、M01 信用持仓、M05 佣金 HAVING、M07 现金流入列表、M09 开放式基金一级、M11 本币vs总资产、M13 营业部投影 |
+| 回流 | `python scripts/reflux_extra_candidates.py` → `examples.yaml` **8→15**（+7 改写） |
+| 隔离 | 全部 Extra 评测原文 `find_exact_few_shot` = 空；改写问句可 HIT |
+| 回归 | `tests/test_extra_fewshot_isolation.py`；回流 SQL 均可执行 |
+
 ### Step 6 — 文档收口
 
 | 子步 | 动作 | 验证 |
@@ -624,6 +634,57 @@ python scripts/baseline_eval.py --path "data/extra/Q&A_all.xlsx" --no-exact-few-
 | 6.2 | 记录剩余缺口与是否再开「续三」 | 答辩双轨话术可引用本文 |
 
 **Step 6 Done =** 阶段三续二闭环。
+
+#### Step 6 收口数字（2026-08-09，Step 5 回流后复测）
+
+命令：
+
+```text
+python scripts/baseline_eval.py --stem logs/eval_reports/official_default --no-llm-diagnose
+python scripts/baseline_eval.py --path "data/extra/Q&A_all.xlsx" --no-exact-few-shot --max-few-shots 3 --stem logs/eval_reports/extra_all_A_fs3 --no-llm-diagnose
+python scripts/baseline_eval.py --path "data/extra/Q&A_all.xlsx" --no-exact-few-shot --max-few-shots 0 --stem logs/eval_reports/extra_all_A_fs0 --no-llm-diagnose
+```
+
+| 轨道 | EX | 分档（简/中/难） | 失败 | p50/p95 (ms) | 产物 |
+|------|-----|------------------|------|--------------|------|
+| 官方默认（开短路） | **7/7 = 100%** | — | — | 3351 / 3620 | `official_default.*` |
+| Extra-A（关短路, fs=3） | **36/36 = 100%** | **10/10 · 14/14 · 12/12** | — | 3459 / 12515 | `extra_all_A_fs3.*` |
+| Extra-B（关短路, fs=0） | **34/36 = 94.4%** | **10/10 · 14/14 · 10/12** | H01, H07 | 3269 / 5207 | `extra_all_A_fs0.*` |
+
+**基线对照（Step 3 初测 → 收口）**
+
+| 轨道 | Step 3 | 收口 | Δ |
+|------|--------|------|---|
+| 官方开短路 | 7/7 | 7/7 | 0 |
+| Extra-A fs=3 | 30/36 (83.3%) | **36/36 (100%)** | +6 |
+| Extra-B fs=0 | 25/36 (69.4%) | **34/36 (94.4%)** | +9 |
+
+**工程交付摘要**
+
+| 项 | 结果 |
+|----|------|
+| Extra 金标 | `data/extra/Q&A_{easy,medium,hard,all}.xlsx`（10+14+12=36） |
+| 评测能力 | `--no-exact-few-shot` / `--max-few-shots` / 多 path |
+| 提准迭代 | P0 期间 HAVING + A股层级；P1 字典/投影/资产列；M09 开放式基金一级 |
+| Few-Shot | `examples.yaml` 15 条；其中 7 条 Extra **改写**回流；评测原文 exact miss |
+| 隔离测 | `tests/test_extra_fewshot_isolation.py` |
+
+**剩余缺口 / 是否续三**
+
+| 缺口 | 说明 | 建议 |
+|------|------|------|
+| Extra-B H01 | 无 few-shot 时银卡×A股×盈亏六列偶发偏差 | 可选：再加 1 条盈亏**改写** few-shot；或接受 fs=0 Hard 非满分 |
+| Extra-B H07 | Top-N 营业部次序/并列不稳定 | Prompt 补「ORDER BY 指标 DESC, org_name」；非挡 90% |
+| 官方关短路 case6 | pred 24 vs gold 25（`official_reg`） | **金标 fan-out**；产品默认开短路仍 7/7；**不**复刻凑 EX |
+| 阶段四 | 延迟/缓存/并行未在本续二范围 | 开「阶段四」专档，勿与 Extra 提准混做 |
+
+**续三（可选，非本阶段阻塞）：** 仅当需要冲 Extra-B Hard 满分或系统修正官方 case6 金标叙事时再开；当前双轨验收已达标。
+
+**答辩双轨数字（可直接引用）**
+
+- 赛题功能验证：官方 7 题 EX **7/7**（产品默认 exact 短路）。  
+- 泛化补全：自建 Extra 36 题关短路 fs=3 EX **36/36**（简/中/难全过）；无 few-shot 压力测 fs=0 仍 **34/36 ≥90%**。  
+- 闭环：评测 → 归因（P0/P1）→ 改写回流（+7）→ 隔离保证不污染 Extra 原文。
 
 ### 8.1 并行与依赖（一眼看懂）
 
@@ -687,7 +748,7 @@ flowchart TD
 | LLM 评测成本 | 分档跑；改代码后先 `--limit` 再全量 |
 | 答辩混淆两套分数 | 明确：官方 7 = 赛题功能验证；Extra 36 = 泛化与主题补全 |
 
-**答辩一句话**：我们在赛题提供的 7 对金标上达到工业可用 EX，并自建 36 题分层 Extra 集（关短路）检验泛化；优质案例改写后回流 Few-Shot，形成评测—归因—增强闭环，且不污染官方金标。
+**答辩一句话**：官方 7 题 EX 7/7 做赛题功能验证；自建 Extra 36 题关短路达到 36/36（fs=3）与 34/36（fs=0），经归因修补与改写 Few-Shot 回流形成闭环，且评测原文不触发 exact 短路。
 
 ---
 
@@ -709,8 +770,8 @@ flowchart TD
 | Step 4.3 P0 Prompt + 复测 | ✅（子集 3/3；全量曾 30/36） |
 | Step 4.3 P1 Prompt/枚举/metrics/JSON 重试 + 复测 | ✅（曾 Extra-A fs3 34/36；官方默认 7/7） |
 | M09 开放式基金一级层级 + 复测 | ✅（E+M **24/24**；Extra-A fs3 **36/36**） |
-| Step 5 candidates + HITL 回流 | ⬜ |
-| Step 6 本文收口贴数字 | ⬜ |
+| Step 5 candidates + HITL 回流 | ✅（7 条改写；examples 15；隔离测绿） |
+| Step 6 本文收口贴数字 | ✅（官方 7/7；A 36/36；B 34/36；缺口与续三说明已记） |
 
 ---
 
@@ -720,10 +781,13 @@ flowchart TD
 |------|------|
 | 官方金标 | `data/Q&A.xlsx` |
 | Extra 金标 | `data/extra/` |
-| Few-Shot | `metadata/few_shots/examples.yaml` |
+| Few-Shot 正式库 | `metadata/few_shots/examples.yaml`（15） |
+| Few-Shot Extra 候选 | `metadata/few_shots/candidates_extra.yaml` |
+| 回流脚本 | `scripts/reflux_extra_candidates.py` |
 | 指标口径 | `metadata/metrics/metrics.yaml` |
 | 评测加载 | `querypilot/eval/dataset.py` |
-| 批跑 | `querypilot/eval/runner.py` |
-| 回流 | `querypilot/eval/review.py` |
+| 批跑 | `querypilot/eval/runner.py` / `scripts/baseline_eval.py` |
+| 回流 API | `querypilot/eval/review.py` |
+| 隔离测 | `tests/test_extra_fewshot_isolation.py` |
 | 续一记录 | `logs/03-阶段三续一-金标准确率提升与归因驱动迭代.md` |
-| 评测产物 | `logs/eval_reports/` |
+| 收口产物 | `logs/eval_reports/official_default.*`、`extra_all_A_fs3.*`、`extra_all_A_fs0.*` |

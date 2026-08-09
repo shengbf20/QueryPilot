@@ -184,7 +184,16 @@ def append_few_shot(
     doc["examples"] = examples
     out.parent.mkdir(parents=True, exist_ok=True)
     # Preserve a short header comment when rewriting.
-    body = yaml.safe_dump(doc, allow_unicode=True, sort_keys=False)
+    # Prefer block scalars for multiline SQL so examples.yaml stays readable.
+    class _Dumper(yaml.SafeDumper):
+        pass
+
+    def _str_representer(dumper: yaml.SafeDumper, data: str):  # type: ignore[name-defined]
+        style = "|" if "\n" in data else None
+        return dumper.represent_scalar("tag:yaml.org,2002:str", data, style=style)
+
+    _Dumper.add_representer(str, _str_representer)
+    body = yaml.dump(doc, Dumper=_Dumper, allow_unicode=True, sort_keys=False)
     header = "# Few-shot CoT examples for NL2SQL (marketing analytics)\n\n"
     if out.exists():
         existing = out.read_text(encoding="utf-8")
