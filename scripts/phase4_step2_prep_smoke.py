@@ -113,8 +113,12 @@ def main() -> int:
     assert report["ok_count"] == 2
 
     # Contract snapshot for step-2 implementers (printed, not asserted as frozen forever)
+    import inspect
+
+    from querypilot.agent.pipeline import ask as ask_fn
+
     snapshot = {
-        "ask_has_use_cache": False,
+        "ask_has_use_cache": "use_cache" in inspect.signature(ask_fn).parameters,
         "cache_package_exists": (ROOT / "querypilot" / "cache").is_dir(),
         "load_metadata_ms": [round(x, 3) for x in load_ms],
         "prune_ms": {"first": round(p1_ms, 3), "second": round(p2_ms, 3)},

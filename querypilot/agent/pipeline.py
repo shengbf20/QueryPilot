@@ -9,9 +9,9 @@ from openai import OpenAI
 
 from querypilot.agent.models import PipelineResult, StageTiming
 from querypilot.agent.sql_generator import generate_sql
+from querypilot.cache.metadata_cache import get_metadata, get_pruned_schema
 from querypilot.db import execute
-from querypilot.metadata_engine.bundle import MetadataBundle, load_metadata
-from querypilot.metadata_engine.schema_pruner import SchemaPruner
+from querypilot.metadata_engine.bundle import MetadataBundle
 from querypilot.safety.l1_ast import guard_sql
 from querypilot.safety.l2_explain import validate_with_l2
 from querypilot.safety.result_probe import probe_result
@@ -31,6 +31,7 @@ def ask(
     max_few_shots: int = 3,
     include_values: bool = True,
     allow_exact_few_shot: bool = True,
+    use_cache: bool | None = None,
 ) -> PipelineResult:
     """Run the full QueryPilot retrieval pipeline for one natural-language question."""
     t_all = time.perf_counter()
@@ -48,11 +49,11 @@ def ask(
             timing=timing,
         )
 
-    md = metadata or load_metadata(load_db_codes=include_values)
+    md = metadata or get_metadata(load_db_codes=include_values, use_cache=use_cache)
 
     # 1) Schema prune
     t0 = time.perf_counter()
-    pruned = SchemaPruner(md).prune(q)
+    pruned = get_pruned_schema(q, md, use_cache=use_cache)
     timing.prune_ms = _elapsed_ms(t0)
     schema_context = pruned.format_for_prompt(md, include_values=include_values)
     allowed = list(pruned.tables)

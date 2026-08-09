@@ -9,8 +9,8 @@ from openai import OpenAI
 from querypilot.agent.models import FewShotExample, PromptBundle, SqlGenerationResult
 from querypilot.agent.prompt import build_prompt, find_exact_few_shot, load_few_shots
 from querypilot.llm.chat import JsonParseError, generate_json
-from querypilot.metadata_engine.bundle import MetadataBundle, load_metadata
-from querypilot.metadata_engine.schema_pruner import PrunedSchema, SchemaPruner
+from querypilot.metadata_engine.bundle import MetadataBundle
+from querypilot.metadata_engine.schema_pruner import PrunedSchema
 
 
 class SqlGenerationError(ValueError):
@@ -86,8 +86,10 @@ def generate_sql(
     When ``allow_exact_few_shot`` and a HITL few-shot matches the question exactly,
     return that SQL without calling the LLM (stable reflux for known cases).
     """
-    md = metadata or load_metadata(load_db_codes=include_values)
-    pruned_schema = pruned or SchemaPruner(md).prune(question)
+    from querypilot.cache.metadata_cache import get_metadata, get_pruned_schema
+
+    md = metadata or get_metadata(load_db_codes=include_values)
+    pruned_schema = pruned or get_pruned_schema(question, md)
     pool = few_shots if few_shots is not None else load_few_shots()
     prompt = build_prompt(
         question,

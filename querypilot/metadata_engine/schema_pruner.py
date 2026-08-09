@@ -265,9 +265,11 @@ def prune_schema(
     metadata: MetadataBundle | None = None,
     **kwargs: object,
 ) -> PrunedSchema:
-    """Convenience wrapper: load metadata if needed, then prune."""
+    """Convenience wrapper: load metadata if needed, then prune (cached by default)."""
+    from querypilot.cache.metadata_cache import get_pruned_schema
+
     md = metadata or __load_metadata_lazy()
-    return SchemaPruner(md).prune(question, **kwargs)  # type: ignore[arg-type]
+    return get_pruned_schema(question, md, **kwargs)  # type: ignore[arg-type]
 
 
 def __load_metadata_lazy() -> MetadataBundle:

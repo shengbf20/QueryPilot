@@ -67,13 +67,13 @@ class MetadataBundle:
         return "\n\n".join(parts)
 
     def prune_schema(self, question: str, **kwargs: object):
-        """Shortcut to SchemaPruner.prune for this bundle."""
-        from querypilot.metadata_engine.schema_pruner import SchemaPruner
+        """Shortcut to cached prune for this bundle (``use_cache=False`` to bypass)."""
+        from querypilot.cache.metadata_cache import get_pruned_schema
 
-        return SchemaPruner(self).prune(question, **kwargs)  # type: ignore[arg-type]
+        return get_pruned_schema(question, self, **kwargs)  # type: ignore[arg-type]
 
 
-def load_metadata(
+def load_metadata_uncached(
     *,
     tables_dir: Path | None = None,
     join_graph_path: Path | None = None,
@@ -82,7 +82,7 @@ def load_metadata(
     load_db_codes: bool = True,
     db_con: duckdb.DuckDBPyConnection | None = None,
 ) -> MetadataBundle:
-    """Load Step 1/2/3 metadata into a single bundle."""
+    """Load metadata from disk/DB without process-local caching."""
     tables = load_all_tables(tables_dir)
     join_graph = load_join_graph(join_graph_path)
     values = load_value_descriptor_config(value_config_path)
@@ -107,4 +107,28 @@ def load_metadata(
         join_graph=join_graph,
         engine=engine,
         metrics=metrics,
+    )
+
+
+def load_metadata(
+    *,
+    tables_dir: Path | None = None,
+    join_graph_path: Path | None = None,
+    value_config_path: Path | None = None,
+    metrics_path: Path | None = None,
+    load_db_codes: bool = True,
+    db_con: duckdb.DuckDBPyConnection | None = None,
+    use_cache: bool | None = None,
+) -> MetadataBundle:
+    """Load Step 1/2/3 metadata into a single bundle (cached by default)."""
+    from querypilot.cache.metadata_cache import get_metadata
+
+    return get_metadata(
+        tables_dir=tables_dir,
+        join_graph_path=join_graph_path,
+        value_config_path=value_config_path,
+        metrics_path=metrics_path,
+        load_db_codes=load_db_codes,
+        db_con=db_con,
+        use_cache=use_cache,
     )
