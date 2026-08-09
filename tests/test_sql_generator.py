@@ -91,6 +91,8 @@ def test_system_prompt_hard_rules():
     assert "[60,)" in SYSTEM_PROMPT
     assert "prdt_type_name" in SYSTEM_PROMPT
     assert "PT040000" in SYSTEM_PROMPT
+    assert "PT050000" in SYSTEM_PROMPT
+    assert "开放式基金" in SYSTEM_PROMPT
     assert "HAVING" in SYSTEM_PROMPT
     assert "盈亏" in SYSTEM_PROMPT
     assert "aset_pft" in SYSTEM_PROMPT

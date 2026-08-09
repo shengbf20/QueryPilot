@@ -42,8 +42,10 @@ metrics:
     tables: [dim_product]
     formula: "prdt_type_name=二级(科创板/A股等); up_prdt_type_name=一级大类"
     description: >
-      科创板/A股/主板等二级用 prdt_type_name；「股票/产品大类」用 up_prdt_type_name 或 up_prdt_type_id（股票=PT040000）。
-      问「A股」不可写成 PT040000。问产品大类分布时同时输出 up_prdt_type_name、prdt_type_name，并对持仓 sum(mkt_val)。
+      科创板/A股/主板等二级用 prdt_type_name；「股票/开放式基金/债券/产品大类」用 up_prdt_type_name 或 up_prdt_type_id
+      （股票=PT040000，开放式基金=PT050000，债券=PT030000）。
+      问「A股」不可写成 PT040000；问「开放式基金」不可写成 prdt_type_name='开放式基金'（二级无此名，二级多为 ETF/LOF 等）。
+      问产品大类分布时同时输出 up_prdt_type_name、prdt_type_name，并对持仓 sum(mkt_val)。
 
   - id: age_bucket_labels
     name: 年龄段标签

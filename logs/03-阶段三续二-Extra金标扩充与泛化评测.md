@@ -2,7 +2,7 @@
 
 > 记录范围：在不改动官方 `data/Q&A.xlsx`（7 题）前提下，规划并落地 Extra 评测集（easy:medium:hard = **10:14:12**，共 **36** 题），用于更全面评价 Agent 泛化能力，并经 HITL 精选回流增强 Few-Shot。  
 > 记录时间：2026-08-09  
-> 状态：🚧 **P1 已落地并复测** → Extra-A（fs=3）**34/36 ≥90%**；下一步 Step 5 Few-Shot 回流 / 收口  
+> 状态：🚧 **P1 + M09 产品层级补强已落地** → Extra-A（fs=3）**36/36**；Easy/Medium **24/24**；下一步 Step 5 Few-Shot 回流 / 收口  
 > 前置依赖：阶段三评测闭环（EX / 归因 / HITL）；阶段三续一官方 7 题 EX **7/7 = 100%**
 
 ---
@@ -590,13 +590,21 @@ python scripts/baseline_eval.py --path "data/extra/Q&A_all.xlsx" --no-exact-few-
 | 官方默认（开短路） | **7/7 = 100%** | — | `official_default.*` |
 
 **P1 已清：** E02 / M11 / M13 / H03 / H06（及 fs=0 侧 M07/M08）。  
-**残留（非阻塞 90%）：**
 
-| id | 现象 | 归因 |
-|----|------|------|
-| M09 | `prdt_type_name='开放式基金'` vs 金标 `up_prdt_type_id='PT050000'` | 基金一级大类 vs 二级名混淆（对称于 H05） |
-| H07（fs3） | Top-5 行集合不一致 | 缺 `ORDER BY trade_amt, org_name` 稳定次序 / 轻微投影差 |
-| 官方关短路 case6 | pred=24 gold=25（历史 `official_reg`） | **金标** `dws_cust_aset_d`×tran **fan-out**；Agent 与 Extra H02 语义正确，**不复刻凑 EX** |
+#### M09 产品层级补强（2026-08-09）
+
+| 改动 | 文件 |
+|------|------|
+| 规则 16：开放式基金/债券为一级（`PT050000`/`PT030000`）；禁 `prdt_type_name='开放式基金'` | `querypilot/agent/prompt.py` |
+| metrics / `dim_product` notes 同步 | `metadata/metrics/metrics.yaml`、`metadata/tables/dim_product.yaml` |
+
+| 复测 | EX | 产物 |
+|------|-----|------|
+| Easy+Medium fs=3 关短路 | **24/24 = 100%** | `extra_em_fs3.*` |
+| Extra-A 全量 fs=3 关短路 | **36/36 = 100%**（相对 P1 的 34/36 提升；含原残留 M09/H07） | `extra_all_A_fs3.*` |
+| 官方默认开短路 | **7/7** | `official_default.*` |
+
+**说明：** 「开放式基金」仅存在于 `up_prdt_type_name`（二级为 ETF/LOF 等）；属口径泛化，未把 Extra 原文灌入 few-shot。官方关短路 case6 的 fan-out 问题仍按金标缺陷处理（产品默认开短路 7/7）。
 
 ### Step 5 — Few-Shot 回流（与评测隔离）
 
@@ -699,7 +707,8 @@ flowchart TD
 | Step 3 官方回归 + Extra-A/B | ✅ |
 | Step 4 归因与修复规划（4.1–4.2） | ✅ |
 | Step 4.3 P0 Prompt + 复测 | ✅（子集 3/3；全量曾 30/36） |
-| Step 4.3 P1 Prompt/枚举/metrics/JSON 重试 + 复测 | ✅（Extra-A fs3 **34/36**；官方默认 **7/7**） |
+| Step 4.3 P1 Prompt/枚举/metrics/JSON 重试 + 复测 | ✅（曾 Extra-A fs3 34/36；官方默认 7/7） |
+| M09 开放式基金一级层级 + 复测 | ✅（E+M **24/24**；Extra-A fs3 **36/36**） |
 | Step 5 candidates + HITL 回流 | ⬜ |
 | Step 6 本文收口贴数字 | ⬜ |
 
