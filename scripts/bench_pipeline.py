@@ -253,9 +253,56 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Cache result rows on hit (skip re-execute; demo/bench)",
     )
+    p.add_argument(
+        "--parallel",
+        action="store_true",
+        help="Benchmark mode-B metric parallel plan (serial vs parallel execute)",
+    )
     p.add_argument("--output", type=str, default=None, help="JSON report path")
     p.add_argument("--no-save", action="store_true", help="Do not write JSON report")
     return p
+
+
+def run_parallel_bench(
+    question: str,
+    *,
+    max_rows: int = 1000,
+    metadata: Any | None = None,
+) -> dict[str, Any]:
+    """Compare serial vs parallel execute for a multi-metric rule plan."""
+    from querypilot.agent.parallel import benchmark_plan, build_parallel_plan
+
+    md = metadata or load_metadata(load_db_codes=False)
+    plan = build_parallel_plan(question)
+    if plan is None:
+        return {
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "mode_requested": "parallel",
+            "ok": False,
+            "error": "question not eligible for parallel plan (need 客群 + ≥2 metric domains)",
+            "question": question,
+        }
+    cmp = benchmark_plan(plan, metadata=md, max_rows=max_rows)
+    return {
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "mode_requested": "parallel",
+        "question": question,
+        "domains": [q.name for q in plan.queries],
+        **cmp,
+    }
+
+
+def format_parallel_bench(report: dict[str, Any]) -> str:
+    if not report.get("ok"):
+        return (
+            f"parallel_bench: FAIL q={report.get('question')!r} "
+            f"err={report.get('error') or report.get('serial_error') or report.get('parallel_error')}"
+        )
+    return (
+        f"parallel_bench: OK domains={report.get('domains')} "
+        f"serial_ms={report.get('serial_ms'):.1f} parallel_ms={report.get('parallel_ms'):.1f} "
+        f"rows={report.get('parallel_rows')} rows_match={report.get('rows_match')}"
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -263,6 +310,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.no_save and args.output is not None:
         print("error: --output and --no-save are mutually exclusive", file=sys.stderr)
         return 2
+
+    if args.parallel:
+        q = args.question or "统计客户的资产和持仓市值"
+        report = run_parallel_bench(q, max_rows=args.max_rows)
+        print(format_parallel_bench(report))
+        if not args.no_save:
+            path = save_bench_report(report, args.output)
+            print(f"saved: {path}")
+        return 0 if report.get("ok") else 1
 
     questions = _load_questions(
         from_qa=args.from_qa,

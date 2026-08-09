@@ -43,6 +43,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Also cache result rows (demo/bench; default off)",
     )
+    ask_parser.add_argument(
+        "--parallel",
+        action="store_true",
+        help="Try rule-based multi-metric parallel plan (fallback to normal ask)",
+    )
 
     eval_parser = sub.add_parser("eval", help="Run Execution Match eval on gold Q&A cases")
     eval_parser.add_argument(
@@ -80,6 +85,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-exact-few-shot",
         action="store_true",
         help="Disable exact-match few-shot short-circuit (for Extra generalization eval)",
+    )
+    eval_parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Parallel case workers for eval wall-clock (default: 1; each gets own DB conn)",
     )
     eval_parser.add_argument(
         "--output",
@@ -249,6 +260,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_few_shots=args.max_few_shots,
             use_cache=False if args.no_cache else None,
             cache_rows=True if args.cache_rows else None,
+            use_parallel=bool(args.parallel),
         )
         print(format_pipeline_result(result, max_print_rows=args.max_rows))
         return 0 if result.ok else 1
@@ -282,6 +294,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_rows=args.max_rows,
             max_few_shots=args.max_few_shots,
             allow_exact_few_shot=not args.no_exact_few_shot,
+            max_workers=max(1, args.workers),
         )
         print(format_eval_report(report))
         if not args.no_save:

@@ -46,6 +46,7 @@ def ask(
     allow_exact_few_shot: bool = True,
     use_cache: bool | None = None,
     cache_rows: bool | None = None,
+    use_parallel: bool = False,
 ) -> PipelineResult:
     """Run the full QueryPilot retrieval pipeline for one natural-language question."""
     t_all = time.perf_counter()
@@ -63,6 +64,37 @@ def ask(
             stage="prune",
             timing=timing,
         )
+
+    # Optional mode-B parallel metrics (opt-in); failure → normal pipeline
+    if use_parallel:
+        from querypilot.agent.parallel import try_parallel_pipeline
+
+        md_par = metadata or get_metadata(load_db_codes=include_values, use_cache=use_cache)
+        t_par = time.perf_counter()
+        par = try_parallel_pipeline(q, metadata=md_par, max_rows=max_rows)
+        if par is not None and par.ok:
+            timing.execute_ms = _elapsed_ms(t_par)
+            timing.total_ms = _elapsed_ms(t_all)
+            return PipelineResult(
+                ok=True,
+                question=q,
+                sql=";\n".join(par.sqls),
+                rationale="parallel metric queries merged on pty_id",
+                tables=list(par.tables),
+                columns=list(par.columns),
+                rows=list(par.rows),
+                row_count=len(par.rows),
+                degraded=False,
+                message="ok",
+                stage="done",
+                timing=timing,
+                extras={
+                    "parallel": True,
+                    "fallback": False,
+                    "parallel_ms": par.parallel_ms,
+                },
+            )
+        # eligible but failed, or not eligible → fall through (fallback)
 
     cache_key = make_query_key(
         q,

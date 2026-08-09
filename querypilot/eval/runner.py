@@ -216,6 +216,7 @@ def run_eval(
     con: duckdb.DuckDBPyConnection | None = None,
     max_rows: int | None = None,
     save_path: Path | str | bool | None = None,
+    max_workers: int | None = None,
     **kwargs: Any,
 ) -> EvalReport:
     """Batch-evaluate gold cases and return an aggregated EvalReport.
@@ -223,10 +224,15 @@ def run_eval(
     ``save_path``: ``True`` → timestamped file under ``logs/eval_reports/``;
     a path string/Path → write there; ``None``/``False`` → do not save.
 
+    ``max_workers``: when >1, evaluate cases concurrently (each case uses its own
+    DuckDB connection; shared ``con`` is ignored in that mode).
+
     Load order when ``cases`` is omitted: ``paths`` (if set) else single ``path``
     (default ``data/Q&A.xlsx``). Kwargs such as ``max_few_shots`` /
     ``allow_exact_few_shot`` are forwarded to ``ask`` when using the default ask.
     """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     if cases is None:
         if paths:
             path_list = list(paths)
@@ -239,18 +245,31 @@ def run_eval(
     if limit is not None:
         case_list = case_list[: max(0, limit)]
 
-    results = [
-        run_case(
+    workers = int(max_workers) if max_workers is not None else 1
+    # Parallel cases must not share one DuckDB connection across threads
+    case_con = None if workers > 1 else con
+
+    def _run_one(case: EvalCase) -> CaseEvalResult:
+        return run_case(
             case,
             ask_fn=ask_fn,
             execute_fn=execute_fn,
             client=client,
-            con=con,
+            con=case_con,
             max_rows=max_rows,
             **kwargs,
         )
-        for case in case_list
-    ]
+
+    if workers <= 1 or len(case_list) <= 1:
+        results = [_run_one(case) for case in case_list]
+    else:
+        ordered: list[CaseEvalResult | None] = [None] * len(case_list)
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futs = {pool.submit(_run_one, case): i for i, case in enumerate(case_list)}
+            for fut in as_completed(futs):
+                ordered[futs[fut]] = fut.result()
+        results = [r for r in ordered if r is not None]
+
     report = summarize(results)
     if save_path:
         target = None if save_path is True else save_path

@@ -260,6 +260,7 @@ def test_main_eval_uses_run_eval(capsys, tmp_path: Path):
         max_rows=10,
         max_few_shots=1,
         allow_exact_few_shot=True,
+        max_workers=1,
     )
     printed = capsys.readouterr().out
     assert "EX: 1/1 = 100.0%" in printed
@@ -641,6 +642,7 @@ def test_main_ask_uses_pipeline(capsys):
         max_few_shots=2,
         use_cache=None,
         cache_rows=None,
+        use_parallel=False,
     )
     out = capsys.readouterr().out
     assert "SELECT 1 AS n" in out
