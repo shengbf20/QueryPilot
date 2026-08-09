@@ -7,7 +7,7 @@ from typing import Any
 from openai import OpenAI
 
 from querypilot.agent.models import FewShotExample, PromptBundle, SqlGenerationResult
-from querypilot.agent.prompt import build_prompt, load_few_shots
+from querypilot.agent.prompt import build_prompt, find_exact_few_shot, load_few_shots
 from querypilot.llm.chat import generate_json
 from querypilot.metadata_engine.bundle import MetadataBundle, load_metadata
 from querypilot.metadata_engine.schema_pruner import PrunedSchema, SchemaPruner
@@ -52,18 +52,45 @@ def generate_sql(
     client: OpenAI | None = None,
     temperature: float = 0.0,
     max_tokens: int | None = 1200,
+    allow_exact_few_shot: bool = True,
 ) -> SqlGenerationResult:
-    """Prune schema (unless provided), build prompt, call LLM, return structured SQL."""
+    """Prune schema (unless provided), build prompt, call LLM, return structured SQL.
+
+    When ``allow_exact_few_shot`` and a HITL few-shot matches the question exactly,
+    return that SQL without calling the LLM (stable reflux for known cases).
+    """
     md = metadata or load_metadata(load_db_codes=include_values)
     pruned_schema = pruned or SchemaPruner(md).prune(question)
+    pool = few_shots if few_shots is not None else load_few_shots()
     prompt = build_prompt(
         question,
         pruned_schema,
         md,
-        few_shots=few_shots if few_shots is not None else load_few_shots(),
+        few_shots=pool,
         include_values=include_values,
         max_few_shots=max_few_shots,
     )
+
+    if allow_exact_few_shot:
+        hit = find_exact_few_shot(question, pool)
+        if hit is not None:
+            uses_cte = hit.sql.lstrip().upper().startswith("WITH")
+            rationale = hit.rationale or "exact few-shot reflux"
+            raw = {
+                "sql": hit.sql,
+                "rationale": rationale,
+                "uses_cte": uses_cte,
+                "source": "few_shot_exact",
+            }
+            return SqlGenerationResult(
+                sql=hit.sql,
+                rationale=rationale,
+                uses_cte=uses_cte,
+                raw=raw,
+                prompt=prompt,
+                pruned=pruned_schema,
+            )
+
     raw = generate_json(
         prompt.user,
         system=prompt.system,

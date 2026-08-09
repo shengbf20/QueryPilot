@@ -11,7 +11,13 @@ from querypilot.agent.models import (
     SqlGenerationResult,
     StageTiming,
 )
-from querypilot.agent.prompt import SYSTEM_PROMPT, build_prompt, load_few_shots, select_few_shots
+from querypilot.agent.prompt import (
+    SYSTEM_PROMPT,
+    build_prompt,
+    find_exact_few_shot,
+    load_few_shots,
+    select_few_shots,
+)
 from querypilot.agent.sql_generator import (
     SqlGenerationError,
     generate_sql,
@@ -34,6 +40,7 @@ __all__ = [
     "build_prompt",
     "generate_sql",
     "generate_sql_from_prompt",
+    "find_exact_few_shot",
     "load_few_shots",
     "select_few_shots",
     "parse_sql_payload",

@@ -72,6 +72,17 @@ def test_prune_gold_q7_board_trade_and_branch(pruner):
     assert "dim_branch" in result.tables or "ads_cust_info_d" in result.tables
 
 
+def test_prune_gold_q3_pnl_includes_fin_and_aset(pruner):
+    """盈亏问句必须召回资金流动表与资产表（无独立 pnl 表）。"""
+    result = pruner.prune(
+        "钻石卡男性客户，年龄大于40岁，持有比亚迪市值超过1000元，他在26年Q1的盈亏情况"
+    )
+    assert "dws_cust_fin_d" in result.tables
+    assert "dws_cust_aset_d" in result.tables
+    assert "dwd_cust_hold_d" in result.tables
+    assert "dim_product" in result.tables
+
+
 def test_prune_holdings(pruner):
     result = pruner.prune("客户持仓市值排名")
     assert "dwd_cust_hold_d" in result.seed_tables

@@ -34,6 +34,7 @@ SYSTEM_PROMPT = """你是证券客户营销场景下的 DuckDB SQL 专家。根�
 14. 题目指明季度末/某日快照时，优先用固定 data_dt（如 26年Q1末→20260331），不要默认 MAX(data_dt)，除非题目明确要求「最新」。
 15. 年龄段等分桶标签用简洁区间 <30、[30,50)、[50,60)、[60,)（「大于60」对应 [60,)），不要写成 >=60，不要加「1.」「2.」序号前缀。
 16. 科创板/A股等用 dim_product.prdt_type_name；产品大类分布同时输出 up_prdt_type_name、prdt_type_name 与 sum(mkt_val)。
+17. 问及「盈亏/损益」时禁止臆造盈亏表；用资产快照+ dws_cust_fin_d 推算，投影六列：pty_id, bgn_aset, end_aset, aset_in, aset_out, aset_pft。26年Q1 期初 data_dt='20260101'、期末 '20260331'；aset_in/out 对 cash/tran/assign 流入流出求和；aset_pft = end_nm+end_fc - bgn_nm + bgn_fc + aset_out - aset_in。
 """
 
 
@@ -72,6 +73,20 @@ def _few_shot_terms(text: str) -> set[str]:
 
 def _norm_question(text: str) -> str:
     return " ".join(text.strip().split())
+
+
+def find_exact_few_shot(
+    question: str,
+    examples: list[FewShotExample],
+) -> FewShotExample | None:
+    """Return the first example whose question matches after whitespace normalize."""
+    q_norm = _norm_question(question)
+    if not q_norm:
+        return None
+    for ex in examples:
+        if _norm_question(ex.question) == q_norm:
+            return ex
+    return None
 
 
 def select_few_shots(

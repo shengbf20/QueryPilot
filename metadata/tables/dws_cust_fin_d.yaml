@@ -9,6 +9,7 @@ usage:
 notes:
   - sys_source 区分普通账户(nm)与信用账户(fc)
   - tran_in/tran_out 含证券转入转出、托管转入转出、转托转入转出
+  - 期间盈亏：aset_in=sum(cash_in+tran_in+assign_in)，aset_out=sum(cash_out+tran_out+assign_out)；与资产表期初/期末快照联用，勿臆造 pnl 表
 columns:
   - name: data_dt
     type: VARCHAR

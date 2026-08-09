@@ -49,6 +49,7 @@ _DOMAIN_SEED_CUES: tuple[tuple[tuple[str, ...], str], ...] = (
         "dim_product",
     ),
     (("盈亏", "损益", "入金", "出金", "净流入", "资金流入", "资金流出"), "dws_cust_fin_d"),
+    (("盈亏", "损益", "收益情况"), "dws_cust_aset_d"),
 )
 
 # Dim dictionary is usually injected via value descriptors, not as a join seed.

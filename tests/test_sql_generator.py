@@ -88,16 +88,20 @@ def test_system_prompt_hard_rules():
     assert "MAX(data_dt)" in SYSTEM_PROMPT or "MAX" in SYSTEM_PROMPT
     assert "[60,)" in SYSTEM_PROMPT
     assert "prdt_type_name" in SYSTEM_PROMPT
+    assert "盈亏" in SYSTEM_PROMPT
+    assert "aset_pft" in SYSTEM_PROMPT
+    assert "dws_cust_fin_d" in SYSTEM_PROMPT
 
 
 def test_load_few_shots_has_examples():
     shots = load_few_shots()
-    assert len(shots) >= 6
+    assert len(shots) >= 7
     assert all(s.question and s.sql for s in shots)
     female = next(s for s in shots if "女性" in s.question)
     assert "5000003" in female.sql
     assert any("产品大类" in s.question for s in shots)
     assert any("科创板" in s.question or "科创板" in s.sql for s in shots)
+    assert any("盈亏" in s.question for s in shots)
 
 
 def test_few_shot_asset_example_joins_on_pty_id_not_data_dt():
@@ -125,6 +129,37 @@ def test_select_few_shots_prefers_product_category_example():
     picked = select_few_shots(q, shots, max_few_shots=2)
     assert picked[0].question == q
     assert "up_prdt_type_name" in picked[0].sql
+
+
+def test_select_few_shots_prefers_period_pnl_example():
+    shots = load_few_shots()
+    q = "钻石卡男性客户，年龄大于40岁，持有比亚迪市值超过1000元，他在26年Q1的盈亏情况"
+    picked = select_few_shots(q, shots, max_few_shots=2)
+    assert picked[0].question == q
+    assert "aset_pft" in picked[0].sql
+    assert "dws_cust_fin_d" in picked[0].sql
+    assert "bgn_aset" in picked[0].sql
+
+
+def test_generate_sql_exact_few_shot_skips_llm(metadata, pruner):
+    """HITL exact match returns reflux SQL without calling the LLM client."""
+    q = "钻石卡男性客户，年龄大于40岁，持有比亚迪市值超过1000元，他在26年Q1的盈亏情况"
+    pruned = pruner.prune(q)
+
+    class _Boom:
+        def chat(self, *args, **kwargs):  # pragma: no cover
+            raise AssertionError("LLM must not be called on exact few-shot hit")
+
+    result = generate_sql(
+        q,
+        metadata=metadata,
+        pruned=pruned,
+        include_values=False,
+        client=_Boom(),  # type: ignore[arg-type]
+    )
+    assert result.raw.get("source") == "few_shot_exact"
+    assert "aset_pft" in result.sql
+    assert "dws_cust_fin_d" in result.sql
 
 
 def test_build_prompt_contains_schema_rules_and_shots(metadata, pruner):

@@ -11,9 +11,14 @@ def test_load_metrics_has_core_formulas():
     assert "total_aset" in ids
     assert "avg_daily_aset" in ids
     assert "product_type_levels" in ids
+    assert "period_pnl" in ids
     total = next(m for m in metrics if m.id == "total_aset")
     assert "nm_tot_aset" in total.formula
     assert "fc_pur_aset" in total.formula
+    pnl = next(m for m in metrics if m.id == "period_pnl")
+    assert "aset_pft" in pnl.formula or "aset_pft" in pnl.description
+    assert "dws_cust_fin_d" in pnl.tables
+    assert "dws_cust_aset_d" in pnl.tables
 
 
 def test_bundle_loads_metrics():
