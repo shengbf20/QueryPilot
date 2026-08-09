@@ -499,14 +499,14 @@ S7  本文勾选收口；数字回填 §九
 |------|------|----|--------------------|---------|
 | Extra2-A fs3 | `extra2_A_fs3_final2.*` | **40/40 = 100%** | 3110 / 5111 | — |
 | Extra2-B fs0 | `extra2_B_fs0_final2.*` | **40/40 = 100%** | 3118 / 4408 | — |
-| 官方默认（开短路） | `official_default_check.*` | **7/7 = 100%** | 2919 / 4244 | — |
-| 官方关短路 fs3 | `official_noshort_fs3.*` | **6/7 = 85.7%** | 3636 / 5270 | **6**（金标 quirk，见下） |
+| 官方默认（开短路） | （报告已清理，数字留档） | **7/7 = 100%** | 2919 / 4244 | — |
+| 官方关短路 fs3 | （报告已清理，数字留档） | **6/7 = 85.7%** | 3636 / 5270 | **6**（金标 quirk，见下） |
 
 ### 9.3 对照解读
 
 - **Extra36-A vs Extra2-A（S5）**：旧集关短路满分 → 清新集曾 **87.5%**，说明对 Extra36 存在同库过拟合。
 - **提准后**：Extra2-A/B 均 **40/40**；官方默认仍 **7/7**。清新集缺口（剪枝 hub、枚举渲染、`tran_in` 金标、手续费别名、净流入/双窗、盈亏列 rewrite）已按 S6 优先级合入。
-- **官方关短路 Q6**：pred=24 / gold=25。金标定义了未使用的 `cust_avg_30` CTE，最终只从 `cust_tran` 取客；语义正确的「日均资产∩股票交易」交集少 1 个产品类型（货币式基金/货币市场基金）。**不改官方金标**；开短路仍 7/7。详见 `official_noshort_fs3_review.json`。
+- **官方关短路 Q6**：pred=24 / gold=25。金标定义了未使用的 `cust_avg_30` CTE，最终只从 `cust_tran` 取客；语义正确的「日均资产∩股票交易」交集少 1 个产品类型（货币式基金/货币市场基金）。**不改官方金标**；开短路仍 7/7。
 - **主要修复（相对 S6 backlog）**：
   1. **P0** `schema_pruner`：客户线索 + `dim_branch` 时注入 `ads_cust_info_d`。
   2. **P1** `bundle` 渲染 `enum_values` / `cust_type`；FM08 金标→`tran_in`；fare 别名 + Prompt 规则。
@@ -553,7 +553,7 @@ S7  本文勾选收口；数字回填 §九
 | 本规划 | `logs/04-阶段四续二-Extra2清新泛化评测集.md` |
 | Extra2 数据 | `data/extra2/`（xlsx + entities + build） |
 | Isolation | `tests/test_extra2_isolation.py` |
-| 评测报告 | `logs/eval_reports/extra2_A_fs3.*`、`extra2_B_fs0.*`、`official_p4x2_default.*` |
+| 评测报告 | `logs/eval_reports/extra2_{A_fs3,B_fs0}.{json,md}`（S5 基线）、`extra2_*_final2.*`（提准后）、`extra36_*_post_extra2.*`、`extra2_fail_summary.md` |
 | Extra36（只读对照） | `data/extra/Q&A_all.xlsx` |
 | 官方（只读） | `data/Q&A.xlsx` |
 | 评测入口 | `scripts/baseline_eval.py`、`querypilot eval` |
