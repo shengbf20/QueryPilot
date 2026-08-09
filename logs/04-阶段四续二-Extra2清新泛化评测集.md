@@ -2,7 +2,7 @@
 
 > 记录范围：在**不改**官方 `data/Q&A.xlsx`、**不改**既有 Extra36（`data/extra/`）前提下，新建约 **40** 道 held-out 金标（Extra2），用于**清新**评估当前 Agent 同库泛化；本文为从命题 → 金标 → 评测检验的可执行 SOP。  
 > 记录时间：2026-08-09  
-> 状态：⏳ 规划已落档 / 命题与 xlsx 未开工  
+> 状态：⏳ **S1–S3 已完成**（40 题金标校验①通过并落盘 xlsx）；S4 isolation / S5 全量评测未开工  
 > 前置依赖：Extra36 闭环（`logs/03-阶段三续二-*.md`）；评测管线（`load_qa_cases` / `baseline_eval`）；可选对照基线 `extra_fast_A_fs3` / `extra_fast_B_fs0`；与续一（`logs/04-阶段四续一-*.md` 提准）**解耦**——本续二以造题+评测为主，默认不改 Pipeline
 
 ---
@@ -424,13 +424,23 @@ S7  本文勾选收口；数字回填 §九
 | 步骤 | 状态 | 一句话 |
 |------|------|--------|
 | S0 本文规划落档 | ✅ | 流程与题单骨架已定 |
-| S1 矩阵/去重清单 | ⏳ | 未开工 |
-| S2 探数 entities | ⏳ | 未开工 |
-| S3 命题+金标 SQL | ⏳ | 未开工 |
-| S4 xlsx + isolation | ⏳ | 未开工 |
+| S1 矩阵/去重清单 | ✅ | `data/extra2/dedupe_checklist.md`；与官方/Extra36/few-shot 55 条占用问句比对 |
+| S2 探数 entities | ✅ | `_explore.py` + `entities.md`；assign 全库为 0 → FM08 冻结为 cnt=0 |
+| S3 命题+金标 SQL | ✅ | 12+16+12；`_build_extra2.py` 40/40 可执行；问句去重通过 |
+| S4 xlsx + isolation | ⏳ | xlsx 已由 S3 顺带写出；isolation 单测未开工 |
 | S5 Extra2-A/B + 官方回归 | ⏳ | 未开工 |
 | S6 归因摘要 / candidates | ⏳ | 未开工 |
 | S7 收口勾选 | ⏳ | 未开工 |
+
+### S3 造题摘记（2026-08-09）
+
+| 项 | 结果 |
+|----|------|
+| 落盘 | `data/extra2/Q&A_{easy,medium,hard,all}.xlsx` |
+| 校验① | 40 条 DuckDB 执行通过；FM08 故意 `cnt=0`（考 `assign_in`） |
+| 去重 | 与占用问句全文 0 冲突 |
+| 主实体换批 | 销户/南京市/金卡女/南方天天利/江特电机/特变电工/利欧股份/`002131`；盈亏客群=白金×创业板 |
+| 重建命令 | `PYTHONPATH=. python data/extra2/_build_extra2.py` |
 
 ---
 
