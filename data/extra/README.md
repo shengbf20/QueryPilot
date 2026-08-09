@@ -6,10 +6,10 @@
 
 | 文件 | 题量 | 说明 |
 |------|------|------|
-| `Q&A_easy.xlsx` | 10 | E01–E10 |
-| `Q&A_medium.xlsx` | 14 | M01–M14 |
-| `Q&A_hard.xlsx` | 12 | H01–H12 |
-| `Q&A_all.xlsx` | 36 | 三档合并，便于基线 |
+| `Q&A_easy.xlsx` | 10 | E01–E10（✅ Step 2b） |
+| `Q&A_medium.xlsx` | 14 | M01–M14（✅ Step 2c） |
+| `Q&A_hard.xlsx` | 12 | H01–H12（✅ Step 2d–2e） |
+| `Q&A_all.xlsx` | 36 | 三档合并（✅ Step 2f；顺序 E→M→H） |
 
 ## 表头约定
 
@@ -23,7 +23,9 @@
 
 | 文件 | 用途 |
 |------|------|
-| `entities.md` | Step 2a 探数：状态码/职业码/产品名/阈值 |
+| `entities.md` | Step 2a 探数结果（写金标常量冻结表） |
+| `_explore_step2a.py` | 探数复现脚本（`PYTHONPATH=. python data/extra/_explore_step2a.py`） |
+| `_explore_report.txt` | 探数原始输出 |
 | `README.md` | 本说明 |
 
 规划详见 `logs/03-阶段三续二-Extra金标扩充与泛化评测.md`。

@@ -2,7 +2,7 @@
 
 > 记录范围：在不改动官方 `data/Q&A.xlsx`（7 题）前提下，规划并落地 Extra 评测集（easy:medium:hard = **10:14:12**，共 **36** 题），用于更全面评价 Agent 泛化能力，并经 HITL 精选回流增强 Few-Shot。  
 > 记录时间：2026-08-09  
-> 状态：🚧 **Step 1 完成** → 下一步 **Step 2a/2b（探数 + Easy 金标）**；xlsx / EX 基线尚未执行  
+> 状态：🚧 **Step 2 金标齐备（36 题）** → 下一步 **Step 3（双轨基线评测）**  
 > 前置依赖：阶段三评测闭环（EX / 归因 / HITL）；阶段三续一官方 7 题 EX **7/7 = 100%**
 
 ---
@@ -386,11 +386,60 @@ python scripts/baseline_eval.py --path data/extra/Q&A_all.xlsx --no-exact-few-sh
 | 子步 | 范围 | 动作 | 验证 |
 |------|------|------|------|
 | 2a | 探数 | 对 §六 涉及的状态码/职业码/产品名/阈值跑探索 SQL，填「实体与阈值表」（可附本文附录或 `data/extra/entities.md`） | 每个 E/M/H 题有可落地常量，避免盲写 0 行 |
+
+#### Step 2a 实测记录（2026-08-09）
+
+| 项 | 结果 |
+|----|------|
+| 脚本 / 报告 | `data/extra/_explore_step2a.py` → `_explore_report.txt` |
+| 冻结表 | ✅ [`data/extra/entities.md`](../data/extra/entities.md) |
+| 关键选用 | 状态正常 `2000001`；女+职业 `7000032`；银卡 `1000004`；天天发/`940018`；港币 `ccy=2`；信用产品三六零；H10=华昌化工∩海陆重工(4)；Q1 阈值见 entities |
+| 注意 | 资产日仅 20260101–20260331；`tran_out` 大额≈0 故出金用 cash_out；美元过稀用港币 |
 | 2b | Easy×10 | 写 E01–E10 问句+SQL；执行；落盘 `Q&A_easy.xlsx` | 10 题 execute OK；`load_qa_cases` 得 10；难度=简单 |
+
+#### Step 2b 实测记录（2026-08-09）
+
+| 项 | 结果 |
+|----|------|
+| 产物 | ✅ `data/extra/Q&A_easy.xlsx`（构建脚本 `_build_easy_xlsx.py`） |
+| 执行非空 | E01=486, E02=56, E03=197, E04=88, E05=80, E06=148, E07=160, E08=8省, E09=15营业部, E10=96 |
+| 加载 | `load_qa_cases` → 10；难度=简单；theme 齐全 |
+| 与 few-shot | E04 问句已改写（含快照日），**无**与 `examples.yaml` 全文相同 |
 | 2c | Medium 补洞优先 | 先 M01,M03–M05,M07–M08,M09（信用/买卖/佣金/资金/产品类）；再补齐 M02,M06,M10–M14 | 14 题 OK → `Q&A_medium.xlsx` |
+
+#### Step 2c 实测记录（2026-08-09）
+
+| 项 | 结果 |
+|----|------|
+| 产物 | ✅ `data/extra/Q&A_medium.xlsx`（`_build_medium_xlsx.py`） |
+| 执行非空 | M01=4 … M14=88；M07/M08 列表 64/74；M13=15 营业部；M06/M09/M12 金额>0 |
+| 加载 | 14 题；难度=中等；theme 齐全；与 few-shot **无**全文撞车 |
+| 口径点 | M11 区分 nm_tot_aset vs total_aset；M14 用 MAX(data_dt)（当前库恰为 20260331） |
 | 2d | Hard 槽 1–6 | H01–H06（盈亏/日均/组合/资金×持仓/信用币种/佣金组织） | 6 题 OK |
 | 2e | Hard 槽 7–12 | H07–H12（Top-N/投影/最新对照/多产品/两道改写） | 12 题 OK → `Q&A_hard.xlsx` |
+
+#### Step 2d–2e 实测记录（2026-08-09）
+
+| 项 | 结果 |
+|----|------|
+| 产物 | ✅ `data/extra/Q&A_hard.xlsx`（`_build_hard_xlsx.py`） |
+| H01 | 银卡男+A股市值>1000，Q1 盈亏六列，**77** 行（非钻石/非比亚迪） |
+| H02/H12 | 日均∧股票交易→产品类；cohort 进入最终 FROM；H12 改写同 SQL，**24** 组 |
+| H03–H07 | 营业部分布/入金∧基金/fc+人民币+A股/佣金活跃/Top5 均非空 |
+| H08–H10 | 四列投影 96 行；最新快照明细 88；华昌化工∩海陆重工 **4** |
+| H11 | M03 改写，人数 310 |
+| 加载 | 12 题；难度=困难；theme 齐全；与 few-shot/E/M 问句 **无**全文撞车 |
 | 2f | 合并 | 生成 `Q&A_all.xlsx`（或 many 加载三文件，仍建议落盘 all 便于基线） | 合计 **36**；§五补洞表打勾 |
+
+#### Step 2f 实测记录（2026-08-09）
+
+| 项 | 结果 |
+|----|------|
+| 产物 | ✅ `data/extra/Q&A_all.xlsx`（`_build_all_xlsx.py`） |
+| 条数 | **36** = 10 简单 + 14 中等 + 12 困难 |
+| 顺序 | E01–E10 → M01–M14 → H01–H12；id 无重复 |
+| 一致性 | `load_qa_cases(all)` 与 `load_qa_cases_many(easy,medium,hard)` 字段一致 |
+| theme | 36/36 非空 |
 
 **每题门禁（2b–2e 共用）**：① 问句≠现有 `examples.yaml`；② 金标可执行且非空（除非标注故意空）；③ theme/难度已填；④ Hard 未克隆官方 3/6/7 骨架。
 
@@ -510,11 +559,11 @@ flowchart TD
 | 规划文档（本文 §〇–§七） | ✅ |
 | Step 0 开工检查 + 脚手架 | ✅ |
 | Step 1 工程底座（多 path / 关短路 / pytest） | ✅ |
-| Step 2a 探数与实体阈值表 | ⬜ |
-| Step 2b Easy 10 → `Q&A_easy.xlsx` | ⬜ |
-| Step 2c Medium 14 → `Q&A_medium.xlsx` | ⬜ |
-| Step 2d–2e Hard 12 → `Q&A_hard.xlsx` | ⬜ |
-| Step 2f `Q&A_all.xlsx` | ⬜ |
+| Step 2a 探数与实体阈值表 | ✅ |
+| Step 2b Easy 10 → `Q&A_easy.xlsx` | ✅ |
+| Step 2c Medium 14 → `Q&A_medium.xlsx` | ✅ |
+| Step 2d–2e Hard 12 → `Q&A_hard.xlsx` | ✅ |
+| Step 2f `Q&A_all.xlsx` | ✅ |
 | Step 3 官方回归 + Extra-A/B | ⬜ |
 | Step 4 归因与系统性修补 | ⬜ |
 | Step 5 candidates + HITL 回流 | ⬜ |
