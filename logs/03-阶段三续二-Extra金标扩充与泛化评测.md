@@ -1,0 +1,463 @@
+# QueryPilot 阶段三续二：Extra 金标扩充与泛化评测
+
+> 记录范围：在不改动官方 `data/Q&A.xlsx`（7 题）前提下，规划并落地 Extra 评测集（easy:medium:hard = **10:14:12**，共 **36** 题），用于更全面评价 Agent 泛化能力，并经 HITL 精选回流增强 Few-Shot。  
+> 记录时间：2026-08-09  
+> 状态：📋 **规划中**（本文档为完整方案；xlsx 落盘 / 工程改造 / EX 基线尚未执行）  
+> 前置依赖：阶段三评测闭环（EX / 归因 / HITL）；阶段三续一官方 7 题 EX **7/7 = 100%**
+
+---
+
+## 〇、摘要与边界
+
+### 0.1 动机
+
+1. **官方金标仅 7 题**：功能验证足够，统计意义弱；续一满分不能外推为开放域已达标。
+2. **过拟合风险已暴露**：精确问句 Few-Shot 短路、样例高度贴近金标结构；改写问句与关短路回归尚未系统做。
+3. **主题覆盖有洞**：状态/职业字典维、买卖/佣金微观、独立资金流、信用/币种、非科创板产品类等在官方集中缺失或极浅。
+4. **赛题与规划允许自建评测**：README 要求工程化评测与可持续迭代，并规划 30+ 营销场景 Few-Shot；官方问答对只读用于功能验证，Extra 可另建。
+
+### 0.2 目标
+
+| 目标 | 说明 |
+|------|------|
+| 扩充 Extra 36 题 | 10 easy + 14 medium + 12 hard，主题互补官方 7 题 |
+| 双轨评价 | 官方 EX（产品行为）与 Extra EX（关短路泛化）分开报告 |
+| 能力增强 | 精选 5～8 条**改写问句**经 HITL 回流 Few-Shot；评测原文不触发 exact 短路 |
+| 质量 | 问题标准清晰、金标 SQL 可执行且口径严谨、中难能力轴尽量打满 |
+
+### 0.3 与续一 / 阶段四边界
+
+| 做 | 不做 |
+|----|------|
+| 新建 `data/extra/*.xlsx`；最小评测工程改造；Extra 基线与归因 | **不改**官方 7 题问句/SQL；不改 `data/` 原始 CSV |
+| 关短路跑 Extra；可选回流 candidates | 不以 Extra 满分替代赛题「官方 >90%」叙事 |
+| 准确率 / 泛化诊断 | 不混做阶段四缓存/并行性能优化本身 |
+
+### 0.4 规模参照（为何定 36）
+
+公开基准量级远大于本项目（Spider 全量约 1 万问、dev≈1034；BIRD 全量约 1.2 万、dev≈1534；金融单库 FIBEN≈300）。单域库常见 20～50 问。官方 7 + Extra 15 仍偏薄；定 **36**（约 10:14:12）使中难能铺开能力轴，同时保持人工金标可维护。Spider 难度占比大致 medium 最厚，故 medium=14 > hard=12 > easy=10。
+
+---
+
+## 一、固定决策
+
+
+| 项 | 取值 |
+|----|------|
+| 规模 | easy:medium:hard = **10:14:12**，extra **36** 题 |
+| 官方金标 | `data/Q&A.xlsx` **只读**，7 题不动 |
+| Extra 落盘 | `data/extra/Q&A_easy.xlsx`、`Q&A_medium.xlsx`、`Q&A_hard.xlsx`、`Q&A_all.xlsx` |
+| 表头 | `序号, 问题, SQL, 难度`；另含 `theme`（加载进 `EvalCase.extras`） |
+| id 约定 | 分档文件内 `E01`… / `M01`… / `H01`…；合并时保持此前缀防撞 |
+| 双轨评测 | 官方 EX：默认 `allow_exact_few_shot=True`；Extra EX：**False** |
+| 对照实验 | **A**：关短路 + `max_few_shots=3`；**B**：关短路 + `max_few_shots=0` |
+| Few-Shot 回流 | 评测集**原文**不入 `examples.yaml` exact 命中；回流用**改写问句** + 人工确认 SQL |
+| 方言 | 新金标优先 DuckDB：`DATE '…'` 差值；跨表 Join 默认仅 `pty_id` / `org_id` |
+
+---
+
+## 二、交付成果
+
+
+| 产物 | 路径 / 形式 | 验收 |
+|------|-------------|------|
+| 三档 + 合并金标 | `data/extra/Q&A_{easy,medium,hard,all}.xlsx` | 36 题；难度字段正确；theme 齐全 |
+| 规划与手册（本文） | `logs/03-阶段三续二-Extra金标扩充与泛化评测.md` | 覆盖矩阵与题单可执行 |
+| 工程改造 | `dataset.py` 多 path；`ask`/CLI/`baseline_eval` 透传关短路 | pytest 通过 |
+| 泛化评测报告 | `logs/eval_reports/extra_{easy,medium,hard,all}_*` 及 A/B | 可复现 JSON |
+| 官方回归 | 默认 path 再跑 7 题 | EX 不因本任务下降 |
+| Few-Shot 候选 | `metadata/few_shots/candidates_extra.yaml`（或 review 队列） | 与正式库分离 |
+| 回流（确认后） | `metadata/few_shots/examples.yaml` | 5～8 条改写问句，question 去重 |
+
+**成功标准（本阶段规划落地后）**
+
+1. 36 条金标 SQL 在只读 DuckDB 上均可执行；非空策略通过（见 §四）。
+2. 能复现 Extra 全量关短路报告；官方 7 题回归通过。
+3. 覆盖矩阵 A–G 与 Hard 12 槽均有对应题号（允许一题多轴）。
+4. 不以「Extra 也 100%」为必须；以暴露缺口 + 回流增强为目标。
+
+---
+
+## 三、评价方式
+
+```mermaid
+flowchart LR
+  official["Official_Q&A_7"] --> exOff["EX_official"]
+  extra["Extra_36"] --> exA["EX_extra_A_noShortcut_fs3"]
+  extra --> exB["EX_extra_B_noShortcut_fs0"]
+  exOff --> report["Dual_track_report"]
+  exA --> report
+  exB --> report
+```
+
+### 3.1 双轨指标
+
+| 轨道 | 数据集 | 短路 | Few-Shot | 用途 |
+|------|--------|------|----------|------|
+| 官方 | `data/Q&A.xlsx` | 允许 | 默认 3 | 赛题功能验证 / 续一可比 |
+| Extra-A | `data/extra/Q&A_all.xlsx` | **关闭** | 3 | **主泛化指标** |
+| Extra-B | 同上 | **关闭** | 0 | 纯 schema/口径能力 |
+
+解读：A 高 B 低 → 强依赖示例；A、B 都低 → 剪枝/Prompt/口径缺口；仅官方高 Extra 低 → 过拟合官方问法。
+
+### 3.2 分层与诊断
+
+- 总 EX；`by_difficulty`（easy / medium / hard）。
+- **主题覆盖命中**：§五矩阵中每个 theme 至少有对应题；失败时按 theme 归因。
+- **改写稳健性子集**：H11–H12（及必要时 M 档 1 题）必须关短路评测。
+- 失败题走现有 Eval-Agent + HITL 分流；系统性失败再改 Agent，单题怪癖先审金标。
+
+### 3.3 建议命令形态（工程落地后）
+
+```text
+# 官方回归
+querypilot eval --output logs/eval_reports/official_reg.json
+
+# Extra 分档 / 全量（关短路）
+querypilot eval --paths data/extra/Q&A_all.xlsx --no-exact-few-shot --max-few-shots 3 \
+  --diagnose --output logs/eval_reports/extra_all_A.json
+
+querypilot eval --paths data/extra/Q&A_all.xlsx --no-exact-few-shot --max-few-shots 0 \
+  --output logs/eval_reports/extra_all_B.json
+```
+
+---
+
+## 四、扩充原则：问题标准、答案严谨、范围全面
+
+### 4.1 问题标准
+
+1. 问句结构：`[时间] + [客群/产品过滤] + [指标] + [输出形态]`（人数 / 列表 / 分布 / 多列明细）。
+2. 消歧：性别/学历/等级/状态/职业用业务名，金标写死 `dim_public` 映射；「最新」必须在金标中定义为 `MAX(data_dt)` 或固定日，并与 Prompt/元数据约定一致。
+3. Extra **评测问句禁止与** `metadata/few_shots/examples.yaml` **全文相同**。
+4. 每题必填 `theme`（见题单）；一题可主考一轴、兼测另一轴。
+5. **禁止**仅改产品名/阈值的官方题 3/6/7 CTE 骨架克隆；困难档须改「过滤维度 + 时间窗 + 输出列」中至少两项。
+
+### 4.2 答案严谨
+
+1. 金标可在项目 DuckDB 执行；优先 `DATE '…'`；不用依赖脆弱的 `to_date`。
+2. Join：跨表默认 `pty_id` / `org_id`，不默认叠 `data_dt`（客户快照日与事实日本就不齐）。
+3. 资产口径：`total_aset = coalesce(nm_tot_aset,0)+coalesce(fc_pur_aset,0)`（与 `metadata/metrics` 一致）。
+4. 期间盈亏：对齐 metrics 中 `period_pnl` / `aset_pft` 定义；新题换客群，不自创符号规则。
+5. 日均资产：区间每日总资产之和 / 日历天数（含首尾）；过滤器须进入最终结果路径（避免「死 CTE」）。
+6. **两步校验**：① 人工 SQL → 执行看行数与样例行；② `ask` 对照，EX 失败先判金标再判 Agent。
+7. **非空策略**：阈值导致 0 行则降低阈值或换实体，除非题目故意测空结果探针（须在手册标注）。
+8. 投影列名与顺序在问句或题注中写清；EX 以现有 Execution Match 为准。
+
+### 4.3 范围全面
+
+1. Extra 36 题合计再次触及 8 张业务表；并**强制**覆盖官方薄弱点：`cust_status` / `prof_cd`、独立 `dws_cust_fin_d`、买卖不对称、佣金或费用、`sys_source='fc'` 或币种、非 A 股/科创板产品类。
+2. Easy 扛字典与单门槛；Medium 单轴做透；Hard 多轴交叉 + 口径/投影/改写。
+3. 写题前先填 §五矩阵与 §六题号，再写 SQL。
+
+---
+
+## 五、能力轴与覆盖矩阵
+
+### 5.1 能力轴定义
+
+
+| 轴 | 代号 | 含义 |
+|----|------|------|
+| Schema/Join | A | 多表、双维表、组织层级；Join 键约定 |
+| 时间语义 | B | 固定快照 / Q1 / 自定义窗 / 最新 MAX / 双快照日 |
+| 指标口径 | C | total_aset、日均、盈亏、资金流、买卖/佣金 |
+| 产品与账户 | D | 一二级产品类、名/代码、nm/fc、币种 |
+| SQL 结构 | E | 多 CTE、交、HAVING、Top-N、CASE 多指标、投影纪律 |
+| 语言泛化 | F | 改写问句、业务俗称、隐含多码（学历等） |
+| 营销组合 | G | 属性×资产×地域、交易×持仓、资金×资产等 |
+
+### 5.2 官方 7 题已覆盖（简述）
+
+人口过滤+字典、年龄段×资产、组织×地理、命名产品交易∩持仓、日均×股票交易×产品类、科创板×营业部、钻石客群期间盈亏。表皆有触及，但 C/D 微观与 F 改写不足。
+
+### 5.3 Extra 强制补洞（验收打勾）
+
+
+| 补洞项 | 最低题量 | 建议题号 |
+|--------|----------|----------|
+| 账户状态 `cust_status` | ≥1 | E01 |
+| 职业/行业 `prof_cd` | ≥1 | E02, H03 |
+| 独立资金流（非完整盈亏六列） | ≥2 | M07, M08, H04 |
+| 买入/卖出不对称 | ≥2 | M03, M04 |
+| 佣金或费用 | ≥1 | M05, H06 |
+| 信用 `sys_source='fc'` | ≥2 | M01, H05 |
+| 币种 `ccy` | ≥1 | M06, H05 |
+| 非科创板/非纯 A 股产品类 | ≥2 | M09, M10, H05 |
+| 日均且过滤真实生效 | ≥1 | H02 |
+| 盈亏换客群（非钻石/比亚迪骨架） | ≥1 | H01 |
+| 最新 vs 固定快照 | ≥1 | H09（可与 M14 对照） |
+| 改写问句 | ≥2 | H11, H12 |
+
+---
+
+## 六、题单骨架（写题清单）
+
+> 落地写 SQL 时：阈值/具体产品名以 DuckDB 实际有数据为准微调；**意图与主考轴不变**。  
+> 难度字段：`简单` / `中等` / `困难`（或 `easy` / `medium` / `hard`，加载别名已支持）。
+
+### 6.1 Easy（E01–E10）— 单表或事实+维表，投影简单
+
+
+| ID | theme | 意图（一句话） | 主考轴 |
+|----|-------|----------------|--------|
+| E01 | status_filter | 账户状态为「正常」（或数据中高频状态）的客户人数 | A, F |
+| E02 | occupation_filter | 某职业类型的女性客户人数 | A, F |
+| E03 | edu_filter | 高中及以下（或指定学历码集合）客户人数 | A, F |
+| E04 | total_aset_threshold | 总资产超过 100 万的客户人数（快照 20260331） | C, B |
+| E05 | cash_bal_threshold | 普通账户现金余额（nm_bal）超过某阈值的客户人数 | C, D |
+| E06 | hold_product_count | 持有指定产品名称且市值>阈值的客户人数（无交易交集） | A, D |
+| E07 | hold_cnt_threshold | 持仓份额 hold_cnt 超过阈值的客户数（单产品或任意） | C, D |
+| E08 | prov_cust_count | 按省份统计客户数（仅省+人数，勿抄官方题 4 五列） | A |
+| E09 | branch_cust_count | 按营业部名称统计客户数（org 维） | A |
+| E10 | level_gender_count | 某客户等级 + 性别的客户人数（dim_public 双条件简化版） | A, F |
+
+### 6.2 Medium（M01–M14）— 单轴做透，2～3 表
+
+
+| ID | theme | 意图（一句话） | 主考轴 |
+|----|-------|----------------|--------|
+| M01 | credit_hold | 信用账户（sys_source=fc）持有指定产品的客户列表或人数 | D |
+| M02 | credit_tran | 窗口内信用账户交易金额超过阈值的客户 | D, B, C |
+| M03 | sell_only_amt | 指定窗口内**卖出**金额合计>阈值的客户 | C, B |
+| M04 | buy_cnt | 指定窗口内**买入笔数**合计>阈值的客户 | C, B |
+| M05 | commission | 窗口内买卖佣金合计较高的客户或营业部分布 | C, G |
+| M06 | ccy_hold | 持仓币种为美元或港币（或分组）的市值合计 | D |
+| M07 | cash_in_large | Q1（或窗）大额现金转入客户列表（dws_cust_fin_d） | C, B |
+| M08 | cash_out_large | 大额现金转出或证券转出客户 | C, B |
+| M09 | fund_or_bond_type | 持仓属于基金/债券等非股票一级或指定二级类的市值合计 | D |
+| M10 | sor_prdt_id | 按产品代码 sor_prdt_id（非名称）筛选持仓/交易 | D, F |
+| M11 | nm_vs_total | 圈选「本币总资产高但总资产口径不同」或对比 nm_tot_aset 与 total_aset 门槛（题注写清用哪一口径） | C |
+| M12 | trade_window_custom | 非 Q1 的自定义交易窗（如 1/10–2/15 外另一窗）产品交易额 | B, C |
+| M13 | branch_trade_amt | 窗口内按营业部汇总交易金额（客户→org） | A, G |
+| M14 | max_data_dt_snapshot | 问句含「最新」资产快照：金标用 MAX(data_dt)（与固定日题对照） | B |
+
+### 6.3 Hard（H01–H12）— 多轴交叉；对应 12 槽
+
+
+| ID | 槽位 | theme | 意图（一句话） | 主考轴 |
+|----|------|-------|----------------|--------|
+| H01 | 盈亏换客群 | period_pnl_alt | 非钻石/非比亚迪客群的期间盈亏六列（换等级或持股条件） | C, E, G |
+| H02 | 日均∧交易∧产品类 | avg_tran_taxonomy | 日均资产∧股票（或指定）交易量∧持仓产品大类；**过滤均进入最终路径** | C, D, E |
+| H03 | 属性×资产×组织 | occ_age_aset_org | 职业×年龄段×总资产门槛×营业部（或省）分布/人数 | G, A, C |
+| H04 | 资金流∧持仓或交易 | fin_and_hold | 大额净流入（或入金）且仍持有某类产品 / 有交易的客户 | C, G, E |
+| H05 | 信用/币种∧产品∧窗 | fc_ccy_product | 信用账户 + 币种 + 产品类 + 时间窗的交易或持仓聚合 | D, B, E |
+| H06 | 佣金∧活跃∧组织 | rake_active_org | 高佣金/费用且交易笔数多的客户之营业部分布 | C, G, E |
+| H07 | Top-N / HAVING | topn_marketing | 某窗交易额 Top-N 客户或营业部，或 HAVING 后圈选 | E, G |
+| H08 | 多列投影纪律 | wide_projection | 明确多列表输出（≥4 列），禁止多余 COUNT/指标 | E, F |
+| H09 | 最新 vs 固定对照 | latest_vs_fixed | 与 M14/固定日题对照：同指标不同时间语义，金标严格按「最新」 | B, C |
+| H10 | 多产品逻辑 | trade_and_hold_alt | 交易过产品 A 且持有产品 B（换官方题 5 的产品与账户约束组合） | D, E, G |
+| H11 | 改写稳健性 | paraphrase_1 | 对官方中等题或 Extra 中题的**同义改写**（oracle 对齐原逻辑或独立新 SQL） | F |
+| H12 | 改写稳健性 | paraphrase_2 | 另一道改写（建议改写盈亏或日均类问法，关短路必测） | F, C |
+
+### 6.4 题号 × 能力轴速查（规划验收用）
+
+| 轴 | Easy | Medium | Hard |
+|----|------|--------|------|
+| A Join | E01–E03, E08–E10 | M13 | H03 |
+| B 时间 | E04 | M02–M04, M07–M08, M12, M14 | H05, H09 |
+| C 口径 | E04–E05, E07 | M03–M05, M07–M08, M11 | H01–H02, H04, H06, H12 |
+| D 产品账户 | E05–E07 | M01–M02, M06, M09–M10 | H02, H05, H10 |
+| E 结构 | — | — | H01–H08, H10 |
+| F 语言 | E01–E03, E10 | M10 | H08, H11–H12 |
+| G 组合 | — | M05, M13 | H03–H07, H10 |
+
+---
+
+## 七、工程改造要点
+
+> 现有能力：单文件 `load_qa_cases`；`difficulty` 已进 `EvalCase` 与 `by_difficulty`；`generate_sql(..., allow_exact_few_shot=)` 已存在，缺 CLI/`ask` 透传；`baseline_eval` 无 `--path`。
+
+| 项 | 位置 | 改动 |
+|----|------|------|
+| 多文件加载 | `querypilot/eval/dataset.py` | `load_qa_cases_many(paths)`：顺序合并；保留各文件 id 前缀 |
+| Runner | `querypilot/eval/runner.py` | 支持传入多 path 或已合并 cases |
+| Pipeline | `querypilot/agent/pipeline.py` | `ask(..., allow_exact_few_shot=True)` → `generate_sql` |
+| CLI | `querypilot/cli.py` | `--paths`（可重复）或兼容多 `--path`；`--no-exact-few-shot` |
+| 基线脚本 | `scripts/baseline_eval.py` | `--path` / `--paths`；`--no-exact-few-shot` |
+| 单测 | `tests/test_eval_dataset.py` 等 | 多文件合并、theme→extras、难度字段 |
+| 导出 | 包 `__init__.py` | 导出新加载函数（若对外使用） |
+
+**兼容**：默认行为不变（单文件官方金标、允许 exact few-shot）。
+
+---
+
+## 八、正式开工：可落地 Steps
+
+> 执行顺序：**Step 0 → 1**（工程底座）后，**Step 2a 与 2b 可并行**；金标按 **2b→2c→2d→2e** 推进；全部 xlsx 齐后再 **3→4→5→6**。  
+> 每步结束更新 §十一进度勾选。
+
+### Step 0 — 开工检查（约 0.5h）
+
+| 动作 | 验证 |
+|------|------|
+| 确认 DuckDB / 元数据可加载；`data/Q&A.xlsx` 仍为 7 题只读 | `python -c` 或现有 smoke：官方可 `load_qa_cases` |
+| 创建目录 `data/extra/`、`metadata/few_shots/candidates_extra.yaml` 占位（空 examples 列表亦可） | 目录存在 |
+| 本文状态保持「规划中」；开干后在文首进度旁注「Step N 进行中」 | — |
+
+### Step 1 — 工程底座（阻塞评测命令，优先做）
+
+| 子步 | 动作 | 验证 |
+|------|------|------|
+| 1.1 | `dataset.py`：`load_qa_cases_many(paths)`；`theme` 列进 `extras`（若尚未） | 单测：多文件合并条数、id 不丢 |
+| 1.2 | `ask` → `generate_sql` 透传 `allow_exact_few_shot` | 单测或脚本：False 时 exact 命中仍走 LLM |
+| 1.3 | CLI：`--paths` / `--no-exact-few-shot`；`run_eval` 接住 | `--help` 可见；假 client 单测 |
+| 1.4 | `scripts/baseline_eval.py`：`--path(s)` + `--no-exact-few-shot` | `--help` 可见 |
+| 1.5 | 导出与回归：`pytest tests/test_eval_dataset.py tests/test_eval_runner.py`（及相关 CLI 测） | 全绿 |
+
+**Step 1 Done =** 可用一条命令对任意 xlsx 关短路跑 eval（哪怕先只有 1 道样例题）。
+
+### Step 2 — 金标生产（按档；每档「问句冻结 → SQL → 执行非空 → 写入 xlsx」）
+
+| 子步 | 范围 | 动作 | 验证 |
+|------|------|------|------|
+| 2a | 探数 | 对 §六 涉及的状态码/职业码/产品名/阈值跑探索 SQL，填「实体与阈值表」（可附本文附录或 `data/extra/entities.md`） | 每个 E/M/H 题有可落地常量，避免盲写 0 行 |
+| 2b | Easy×10 | 写 E01–E10 问句+SQL；执行；落盘 `Q&A_easy.xlsx` | 10 题 execute OK；`load_qa_cases` 得 10；难度=简单 |
+| 2c | Medium 补洞优先 | 先 M01,M03–M05,M07–M08,M09（信用/买卖/佣金/资金/产品类）；再补齐 M02,M06,M10–M14 | 14 题 OK → `Q&A_medium.xlsx` |
+| 2d | Hard 槽 1–6 | H01–H06（盈亏/日均/组合/资金×持仓/信用币种/佣金组织） | 6 题 OK |
+| 2e | Hard 槽 7–12 | H07–H12（Top-N/投影/最新对照/多产品/两道改写） | 12 题 OK → `Q&A_hard.xlsx` |
+| 2f | 合并 | 生成 `Q&A_all.xlsx`（或 many 加载三文件，仍建议落盘 all 便于基线） | 合计 **36**；§五补洞表打勾 |
+
+**每题门禁（2b–2e 共用）**：① 问句≠现有 `examples.yaml`；② 金标可执行且非空（除非标注故意空）；③ theme/难度已填；④ Hard 未克隆官方 3/6/7 骨架。
+
+**Step 2 Done =** 四个 xlsx 齐，`load_qa_cases_many` → 36。
+
+### Step 3 — 双轨基线评测
+
+| 子步 | 动作 | 验证 |
+|------|------|------|
+| 3.1 | 官方 7 回归（默认短路） | EX 不低于续一（目标仍 7/7）；报告 `logs/eval_reports/official_reg_*` |
+| 3.2 | Extra-A：全量 36，`--no-exact-few-shot --max-few-shots 3` | `extra_all_A_*`；含 `by_difficulty` |
+| 3.3 | Extra-B：全量 36，关短路且 `--max-few-shots 0` | `extra_all_B_*` |
+| 3.4 | （可选）分档再跑 easy/medium/hard 便于归因切片 | 三份分档报告 |
+
+**Step 3 Done =** 官方 + A + B 三份可复现报告落盘。
+
+### Step 4 — 归因与系统性修补（按需迭代，可多轮）
+
+| 子步 | 动作 | 验证 |
+|------|------|------|
+| 4.1 | 对 Extra-A 失败题跑 diagnose / 建 review 队列 | 失败清单按 theme/轴归类 |
+| 4.2 | 区分：金标错 vs Agent 系统性（剪枝/口径/Prompt/L1） | 金标错 → 改 extra xlsx；系统错 → 改代码/元数据（**仍不改官方 7**） |
+| 4.3 | 修后只重跑失败子集或全量 Extra-A | EX 有记录的提升轨迹 |
+
+**Step 4 Done =** 主失败模式有结论；无「金标错误未修却怪 Agent」。
+
+### Step 5 — Few-Shot 回流（与评测隔离）
+
+| 子步 | 动作 | 验证 |
+|------|------|------|
+| 5.1 | 从通过且主题新颖的题选 5～8，**改写问句**写入 `candidates_extra.yaml` | 问句 ≠ 评测原文 |
+| 5.2 | HITL 确认后 `approve_and_reflux`（或等价）写入 `examples.yaml` | 去重；条数 +5～8 |
+| 5.3 | 抽 2 道改写题确认不会对 **评测原文** exact 短路 | `find_exact_few_shot(评测问句)` 为空 |
+
+**Step 5 Done =** 正式 few-shot 增强且 Extra 评测集未被短路污染。
+
+### Step 6 — 文档收口
+
+| 子步 | 动作 | 验证 |
+|------|------|------|
+| 6.1 | 文首状态 → ✅；粘贴官方 / Extra-A / Extra-B 数字与分档 EX | §十一全勾 |
+| 6.2 | 记录剩余缺口与是否再开「续三」 | 答辩双轨话术可引用本文 |
+
+**Step 6 Done =** 阶段三续二闭环。
+
+### 8.1 并行与依赖（一眼看懂）
+
+```mermaid
+flowchart TD
+  s0[Step0_check] --> s1[Step1_engineering]
+  s0 --> s2a[Step2a_explore_DB]
+  s1 --> s3[Step3_eval]
+  s2a --> s2b[Step2b_easy10]
+  s2b --> s2c[Step2c_medium14]
+  s2c --> s2d[Step2d_hard_H01_H06]
+  s2d --> s2e[Step2e_hard_H07_H12]
+  s2e --> s2f[Step2f_all_xlsx]
+  s2f --> s3
+  s3 --> s4[Step4_diagnose_fix]
+  s4 --> s5[Step5_fewshot_reflux]
+  s5 --> s6[Step6_doc_closeout]
+```
+
+### 8.2 建议开工顺序（本周可执行）
+
+| 顺序 | 做什么 | 产出 |
+|------|--------|------|
+| 第 1 件 | **Step 1** 工程底座 | 关短路 eval 可用 |
+| 第 2 件 | **Step 2a + 2b** | `Q&A_easy.xlsx`（先打通落盘与加载） |
+| 第 3 件 | **Step 2c** Medium | `Q&A_medium.xlsx` |
+| 第 4 件 | **Step 2d–2f** Hard + all | 36 题齐 |
+| 第 5 件 | **Step 3→6** | 基线、归因、回流、收口 |
+
+### 8.3 每步「完成定义」速查
+
+| Step | DoD（Definition of Done） |
+|------|---------------------------|
+| 0 | 目录与环境就绪 |
+| 1 | pytest 绿；CLI 可 `--no-exact-few-shot` |
+| 2 | 36 金标可执行 + 四 xlsx |
+| 3 | official / A / B 报告齐全 |
+| 4 | 失败有归因；金标错误已修 |
+| 5 | 5～8 条改写回流且不污染评测 |
+| 6 | 本文 ✅ + 数字落档 |
+
+---
+
+## 九、Few-Shot 增强策略
+
+1. **隔离**：`Q&A_*.xlsx` 评测原文 ≠ `examples.yaml` 问句。  
+2. **候选池**：`metadata/few_shots/candidates_extra.yaml` 存通过且主题新颖的 (question_paraphrase, rationale, sql)。  
+3. **回流**：走 `approve_and_reflux` / 等价人工确认；question 去重。  
+4. **优先回流主题**：资金流、佣金、信用账户、职业×资产、日均真实过滤——官方 few-shot 薄弱处。  
+5. **数量**：首轮 5～8 条；避免把 Hard 题全量灌入导致提示膨胀。
+
+---
+
+## 十、风险与答辩话术
+
+| 风险 | 应对 |
+|------|------|
+| Extra 金标写错误导迭代 | 先执行结果与抽查，再信 Agent；两步校验 |
+| 阈值导致全空 | 写题时用探索 SQL 调阈值 |
+| 与官方题 3/6 怪癖纠缠 | 新盈亏/日均题对齐**当前 metrics**，手册注明；不强制复刻死 CTE |
+| LLM 评测成本 | 分档跑；改代码后先 `--limit` 再全量 |
+| 答辩混淆两套分数 | 明确：官方 7 = 赛题功能验证；Extra 36 = 泛化与主题补全 |
+
+**答辩一句话**：我们在赛题提供的 7 对金标上达到工业可用 EX，并自建 36 题分层 Extra 集（关短路）检验泛化；优质案例改写后回流 Few-Shot，形成评测—归因—增强闭环，且不污染官方金标。
+
+---
+
+## 十一、进度勾选
+
+
+| Step / 项 | 状态 |
+|-----------|------|
+| 规划文档（本文 §〇–§七） | ✅ |
+| Step 0 开工检查 | ⬜ |
+| Step 1 工程底座（多 path / 关短路 / pytest） | ⬜ |
+| Step 2a 探数与实体阈值表 | ⬜ |
+| Step 2b Easy 10 → `Q&A_easy.xlsx` | ⬜ |
+| Step 2c Medium 14 → `Q&A_medium.xlsx` | ⬜ |
+| Step 2d–2e Hard 12 → `Q&A_hard.xlsx` | ⬜ |
+| Step 2f `Q&A_all.xlsx` | ⬜ |
+| Step 3 官方回归 + Extra-A/B | ⬜ |
+| Step 4 归因与系统性修补 | ⬜ |
+| Step 5 candidates + HITL 回流 | ⬜ |
+| Step 6 本文收口贴数字 | ⬜ |
+
+---
+
+## 十二、相关路径速查
+
+| 角色 | 路径 |
+|------|------|
+| 官方金标 | `data/Q&A.xlsx` |
+| Extra 金标 | `data/extra/` |
+| Few-Shot | `metadata/few_shots/examples.yaml` |
+| 指标口径 | `metadata/metrics/metrics.yaml` |
+| 评测加载 | `querypilot/eval/dataset.py` |
+| 批跑 | `querypilot/eval/runner.py` |
+| 回流 | `querypilot/eval/review.py` |
+| 续一记录 | `logs/03-阶段三续一-金标准确率提升与归因驱动迭代.md` |
+| 评测产物 | `logs/eval_reports/` |
