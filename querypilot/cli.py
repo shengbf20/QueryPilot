@@ -172,6 +172,25 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional path to rewrite updated queue JSON",
     )
+
+    serve_parser = sub.add_parser("serve", help="Start HTTP API (FastAPI / uvicorn)")
+    serve_parser.add_argument(
+        "--host",
+        type=str,
+        default="127.0.0.1",
+        help="Bind host (default: 127.0.0.1)",
+    )
+    serve_parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Bind port (default: 8000)",
+    )
+    serve_parser.add_argument(
+        "--reload",
+        action="store_true",
+        help="Enable uvicorn auto-reload (dev)",
+    )
     return parser
 
 
@@ -324,6 +343,18 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "review":
         return _main_review(args, parser)
+
+    if args.command == "serve":
+        import uvicorn
+
+        uvicorn.run(
+            "querypilot.api.app:create_app",
+            factory=True,
+            host=args.host,
+            port=args.port,
+            reload=bool(args.reload),
+        )
+        return 0
 
     parser.print_help()
     return 2

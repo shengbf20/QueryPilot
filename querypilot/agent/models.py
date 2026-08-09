@@ -82,3 +82,9 @@ class PipelineResult:
     pruned: PrunedSchema | None = None
     timing: StageTiming = field(default_factory=StageTiming)
     extras: dict[str, Any] = field(default_factory=dict)
+
+    def to_api_dict(self, *, max_rows: int | None = None) -> dict[str, Any]:
+        """JSON-safe dict for HTTP API / Chat UI (phase 5 API-1 contract)."""
+        from querypilot.api.serialize import pipeline_result_to_api_dict
+
+        return pipeline_result_to_api_dict(self, max_rows=max_rows)

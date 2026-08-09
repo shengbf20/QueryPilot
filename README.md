@@ -267,3 +267,15 @@ python scripts/phase4_perf_closeout.py --live
 # 多指标并行对比（规则路径，与默认 ask 无关）
 python scripts/bench_pipeline.py --parallel --no-save
 ```
+
+### 阶段五快速试用（HTTP API）
+
+```powershell
+# 启动 API（需 .env 中 DEEPSEEK_API_KEY，以及已导入的 db/competition.duckdb）
+querypilot serve --host 127.0.0.1 --port 8000
+
+# 另开终端：推荐用脚本（避免 PowerShell 把 curl/中文 JSON 弄坏）
+python scripts/api_ask_demo.py
+python scripts/api_ask_demo.py --save logs/api_ask_last.json
+# 浏览器调试：http://127.0.0.1:8000/docs
+```
