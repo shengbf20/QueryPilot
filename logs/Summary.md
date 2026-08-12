@@ -19,17 +19,21 @@
   - 进一步提升 Acc、减少耗时
   - 如何测量并减少 token 使用量？（降低成本/开销）
   - 如何提升 robustness？（增加评测题量/更“奇怪”的问法/回答的稳定性）
+- 与 Agent 自更新/自进化深度结合：参考 logs-06
 - 打磨前端：
   - API
   - Chat UI
-- 文案：使用手册、评测报告、更多展示方法
+- 文案：使用手册、评测报告、更多展示方法...
 
 ---
 
 ## 快速上手
 
+- 新环境 clone 后，需跑一次 scripts/import_data.py
+- 需自行参考 .env.example 文件配置 .env 文件，将 `DEEPSEEK_API_KEY` 替换为实际 api key
+
 ```
-# Extra36 + Extra2 = 76；关短路；workers=4（批跑墙钟并行）
+# 评测命令示例：Extra36 + Extra2 = 76；关短路；workers=4（批跑墙钟并行）
 # fs=3
 python -m querypilot.cli eval --path "data/extra/Q&A_all.xlsx" --paths "data/extra2/Q&A_all.xlsx" --no-exact-few-shot --max-few-shots 3 --workers 4 --output "logs/eval_reports/extra76_fast_A_fs3.json"
 
@@ -37,7 +41,7 @@ python -m querypilot.cli eval --path "data/extra/Q&A_all.xlsx" --paths "data/ext
 python -m querypilot.cli eval --path "data/extra/Q&A_all.xlsx" --paths "data/extra2/Q&A_all.xlsx" --no-exact-few-shot --max-few-shots 0 --workers 4 --output "logs/eval_reports/extra76_fast_B_fs0.json"
 ```
 
-- API、Chat UI使用说明见logs-05附录A/B。
+- API、Chat UI使用说明见logs-05附录A/B
 
 ---
 
