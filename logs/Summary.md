@@ -31,7 +31,20 @@
   - 使用手册（eval评测平台如何使用、前端如何使用）
   - 实验报告（书写思路见 “说明目标”）
 
+### New Options
+
+> 解读代码时发现的可选优化方向，均为非阻塞改进，按优先级粗略排序。
+
+- `bundle.py` **惰性导入校验模块**：模块级 import `metadata_validator` 使整条校验链随进程启动加载，而 ask 热路径用不到；移入 `MetadataBundle.validate()` 内可省启动开销。
+- `db/` **连接复用**：`get_connection` 每次新建只读连接，单进程高频 ask 可复用同一连接（eval 并发模式仍应各自开连接）。
+- `llm/` **增加重试与超时封装**：LLM 调用失败目前直接上抛，仅靠 pipeline 的 try/except 降级；可加指数退避重试与超时，提升稳定性。
+- **CLI 补充** `bench` **子命令**：文档（CLAUDE.md）提到 `querypilot bench`，实际入口只有 `scripts/bench_pipeline.py`，可对齐或改文档。
+- **构建类脚本归位**：`data/extra`* 下的 `_build_*.py` 等一次性脚本与「data/ 只读」约定略冲突，可移入 `scripts/` 并规范命名（保留溯源价值，不建议删除）。
+- **前端参数可配置化**：前端调 `/api/ask` 只透传 3 个参数、全走默认路径，与 eval 的可调参数（few-shot、缓存开关）不对齐；可考虑在 UI 或 API 暴露更多开关。
+
 ---
+
+
 
 ## 快速上手
 
