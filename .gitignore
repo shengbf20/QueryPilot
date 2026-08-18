@@ -5,7 +5,7 @@ __pycache__/
 venv/
 *.db
 *.duckdb
-db/
+/db/
 .pytest_cache/
 .ruff_cache/
 logs/eval_reports/

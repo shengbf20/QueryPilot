@@ -13,6 +13,7 @@ load_dotenv(ROOT_DIR / ".env")
 
 
 def _env_flag(name: str, *, default: bool = True) -> bool:
+    """获取环境变量"""
     raw = os.getenv(name)
     if raw is None:
         return default
@@ -36,6 +37,7 @@ class Settings:
 
 
 def get_settings() -> Settings:
+    """获取配置信息"""
     # QUERYPPILOT_CACHE preferred; CACHE_ENABLED accepted as alias
     if os.getenv("QUERYPPILOT_CACHE") is not None:
         cache_enabled = _env_flag("QUERYPPILOT_CACHE", default=True)

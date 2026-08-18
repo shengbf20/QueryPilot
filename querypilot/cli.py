@@ -270,6 +270,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "ask":
+        # 执行单次ask命令，直接调用ask函数
         from querypilot.agent import ask
 
         question = " ".join(args.question).strip()
@@ -285,6 +286,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0 if result.ok else 1
 
     if args.command == "eval":
+        # 执行eval命令，调用run_eval函数
         if args.no_save and args.output is not None:
             parser.error("--output and --no-save are mutually exclusive")
         if args.no_save and args.diagnose_output is not None:
@@ -342,9 +344,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "review":
+        # 执行review命令，调用_main_review函数，用于人机复核
         return _main_review(args, parser)
 
     if args.command == "serve":
+        # 执行serve命令，启动HTTP API，使用uvicorn运行FastAPI应用
         import uvicorn
 
         uvicorn.run(
@@ -361,6 +365,13 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _main_review(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    """
+    人机复核主函数：
+    1. 加载评估报告
+    2. 加载诊断结果
+    3. 构建复核队列
+    4. 保存复核队列
+    """
     import json
     from pathlib import Path
 
