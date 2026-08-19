@@ -70,10 +70,11 @@ def make_query_key(
     allow_exact_few_shot: bool,
     cache_rows: bool,
 ) -> str:
+    """生成查询缓存键"""
     settings = get_settings()
-    meta_ver = metadata_version(settings.metadata_dir)
-    fs_ver = few_shot_version()
-    qn = normalize_question(question)
+    meta_ver = metadata_version(settings.metadata_dir) # 获取元数据版本
+    fs_ver = few_shot_version() # 获取few shot版本
+    qn = normalize_question(question) # 规范化问题
     return (
         f"q={qn}|rows={max_rows}|fs={max_few_shots}|vals={int(include_values)}"
         f"|exact={int(allow_exact_few_shot)}|cacherows={int(cache_rows)}"

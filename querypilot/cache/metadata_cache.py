@@ -1,4 +1,4 @@
-"""Process-local caches for MetadataBundle and PrunedSchema."""
+"""MetadataBundle 与 PrunedSchema 的进程内缓存。"""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ def _default_paths_only(
     metrics_path: Path | None,
     db_con: duckdb.DuckDBPyConnection | None,
 ) -> bool:
-    """Custom paths / injected connections are not cached (key would be ambiguous)."""
+    """自定义路径 / 注入连接不缓存（键会歧义）。"""
     return (
         tables_dir is None
         and join_graph_path is None
@@ -54,10 +54,10 @@ def get_metadata(
     db_con: duckdb.DuckDBPyConnection | None = None,
     use_cache: bool | None = None,
 ):
-    """Return MetadataBundle, optionally from process-local cache."""
+    """返回 MetadataBundle，可选走进程内缓存。"""
     from querypilot.metadata_engine.bundle import load_metadata_uncached
 
-    cache_on = _resolve_use_cache(use_cache) and _default_paths_only(
+    cache_on = _resolve_use_cache(use_cache) and _default_paths_only( # 解析是否使用缓存并检查是否为默认路径
         tables_dir,
         join_graph_path,
         value_config_path,
@@ -65,12 +65,12 @@ def get_metadata(
         db_con,
     )
     if cache_on:
-        key = _bundle_key(load_db_codes=load_db_codes)
-        hit = _bundle_store.get(key)
+        key = _bundle_key(load_db_codes=load_db_codes) # 生成缓存键
+        hit = _bundle_store.get(key) # 从缓存中获取结果
         if hit is not None:
             return hit
 
-    bundle = load_metadata_uncached(
+    bundle = load_metadata_uncached( # 加载元数据
         tables_dir=tables_dir,
         join_graph_path=join_graph_path,
         value_config_path=value_config_path,
@@ -79,7 +79,7 @@ def get_metadata(
         db_con=db_con,
     )
     if cache_on:
-        _bundle_store.set(_bundle_key(load_db_codes=load_db_codes), bundle)
+        _bundle_store.set(_bundle_key(load_db_codes=load_db_codes), bundle) # 缓存结果
     return bundle
 
 
@@ -90,24 +90,24 @@ def get_pruned_schema(
     use_cache: bool | None = None,
     **kwargs: Any,
 ):
-    """Prune with optional process-local LRU keyed by question + bundle identity."""
-    from querypilot.metadata_engine.schema_pruner import SchemaPruner
+    """按问题 + bundle 身份做 LRU 剪枝缓存（可选）。"""
+    from querypilot.metadata_engine.schema_pruner import SchemaPruner # 导入架构修剪器
 
-    cache_on = _resolve_use_cache(use_cache)
-    qn = normalize_question(question)
-    # Stable kwargs key (defaults match SchemaPruner.prune)
-    top_k = int(kwargs.get("top_k", 4))
-    min_score = float(kwargs.get("min_score", 1.5))
-    expand = bool(kwargs.get("expand", True))
-    fallback_table = kwargs.get("fallback_table", "ads_cust_info_d")
-    key = (qn, id(metadata), top_k, min_score, expand, fallback_table)
+    cache_on = _resolve_use_cache(use_cache) # 解析是否使用缓存
+    qn = normalize_question(question) # 规范化问题
+    # 稳定的 kwargs 键（默认值与 SchemaPruner.prune 一致）
+    top_k = int(kwargs.get("top_k", 4)) # 获取 top_k
+    min_score = float(kwargs.get("min_score", 1.5)) # 获取 min_score
+    expand = bool(kwargs.get("expand", True)) # 获取 expand
+    fallback_table = kwargs.get("fallback_table", "ads_cust_info_d") # 获取 fallback_table
+    key = (qn, id(metadata), top_k, min_score, expand, fallback_table) # 生成缓存键
 
     if cache_on:
-        hit = _prune_store.get(key)
+        hit = _prune_store.get(key) # 从缓存中获取结果
         if hit is not None:
             return hit
 
-    pruned = SchemaPruner(metadata).prune(
+    pruned = SchemaPruner(metadata).prune( # 修剪元数据
         question,
         top_k=top_k,
         min_score=min_score,
@@ -115,7 +115,7 @@ def get_pruned_schema(
         fallback_table=fallback_table,
     )
     if cache_on:
-        _prune_store.set(key, pruned)
+        _prune_store.set(key, pruned) # 缓存结果
     return pruned
 
 

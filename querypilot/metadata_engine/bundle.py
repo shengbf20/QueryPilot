@@ -1,4 +1,4 @@
-"""Unified metadata bundle and loader (Step 4)."""
+"""统一元数据bundle和加载器。"""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from querypilot.metadata_engine.value_descriptors import (
 
 @dataclass
 class MetadataBundle:
-    """All metadata layers loaded and ready for Agent / Schema Pruner."""
+    """所有元数据层加载完成，准备用于Agent / Schema Pruner。"""
 
     tables: dict[str, TableMeta]
     values: ValueDescriptorRegistry
@@ -42,7 +42,7 @@ class MetadataBundle:
         return self.engine.expand_tables(seeds)
 
     def format_table_schema(self, table_name: str, *, include_values: bool = True) -> str:
-        """Render a single table schema snippet for LLM prompts."""
+        """渲染单个表的架构片段，用于LLM提示。"""
         meta = self.get_table(table_name)
         lines = [
             f"表: {meta.table} ({meta.alias})",
@@ -70,7 +70,7 @@ class MetadataBundle:
         return "\n\n".join(parts)
 
     def prune_schema(self, question: str, **kwargs: object):
-        """Shortcut to cached prune for this bundle (``use_cache=False`` to bypass)."""
+        """快捷方式，用于缓存的架构修剪（``use_cache=False`` 跳过）。"""
         from querypilot.cache.metadata_cache import get_pruned_schema
 
         return get_pruned_schema(question, self, **kwargs)  # type: ignore[arg-type]
@@ -85,7 +85,7 @@ def load_metadata_uncached(
     load_db_codes: bool = True,
     db_con: duckdb.DuckDBPyConnection | None = None,
 ) -> MetadataBundle:
-    """Load metadata from disk/DB without process-local caching."""
+    """从磁盘/DB加载元数据，不使用进程本地缓存。"""
     tables = load_all_tables(tables_dir)
     join_graph = load_join_graph(join_graph_path)
     values = load_value_descriptor_config(value_config_path)
@@ -123,7 +123,7 @@ def load_metadata(
     db_con: duckdb.DuckDBPyConnection | None = None,
     use_cache: bool | None = None,
 ) -> MetadataBundle:
-    """Load Step 1/2/3 metadata into a single bundle (cached by default)."""
+    """加载Step 1/2/3元数据到一个bundle中（默认缓存）。"""
     from querypilot.cache.metadata_cache import get_metadata
 
     return get_metadata(

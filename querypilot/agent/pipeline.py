@@ -50,13 +50,13 @@ def ask(
     cache_rows: bool | None = None,
     use_parallel: bool = False,
 ) -> PipelineResult:
-    """Run the full QueryPilot retrieval pipeline for one natural-language question."""
+    """为一个自然语言问题运行完整的QueryPilot Pipeline"""
     t_all = time.perf_counter()
-    timing = StageTiming()
-    want_rows = _resolve_cache_rows(cache_rows)
+    timing = StageTiming() # 建计时器
+    want_rows = _resolve_cache_rows(cache_rows) # 解析是否缓存行
 
-    q = question.strip()
-    if not q:
+    q = question.strip() # 输入问题去掉首尾空白
+    if not q: # 如果问题为空，则直接返回错误结果
         timing.total_ms = _elapsed_ms(t_all)
         return PipelineResult(
             ok=False,
@@ -67,13 +67,13 @@ def ask(
             timing=timing,
         )
 
-    # Optional mode-B parallel metrics (opt-in); failure → normal pipeline
+    # 可选的并行度量模式，尝试将多指标问题拆成子查询并行执行
     if use_parallel:
-        from querypilot.agent.parallel import try_parallel_pipeline
+        from querypilot.agent.parallel import try_parallel_pipeline # 导入并行管道
 
         md_par = metadata or get_metadata(load_db_codes=include_values, use_cache=use_cache)
         t_par = time.perf_counter()
-        par = try_parallel_pipeline(q, metadata=md_par, max_rows=max_rows)
+        par = try_parallel_pipeline(q, metadata=md_par, max_rows=max_rows) # 尝试并行执行
         if par is not None and par.ok:
             timing.execute_ms = _elapsed_ms(t_par)
             timing.total_ms = _elapsed_ms(t_all)
@@ -96,9 +96,9 @@ def ask(
                     "parallel_ms": par.parallel_ms,
                 },
             )
-        # eligible but failed, or not eligible → fall through (fallback)
+        # 如果并行执行成功，则返回结果；失败则fallback到正常管道
 
-    cache_key = make_query_key(
+    cache_key = make_query_key( # 生成查询缓存键
         q,
         max_rows=max_rows,
         max_few_shots=max_few_shots,
@@ -108,6 +108,7 @@ def ask(
     )
     cached = get_cached_query(cache_key, use_cache=use_cache)
     if cached is not None and cached.sql:
+        # 如果缓存命中，则从缓存中获取结果
         return _finish_from_cache(
             q,
             cached,
@@ -117,10 +118,11 @@ def ask(
             max_rows=max_rows,
             want_rows=want_rows,
         )
+        
+    # 如果缓存未命中，则继续执行
+    md = metadata or get_metadata(load_db_codes=include_values, use_cache=use_cache) # 获取元数据
 
-    md = metadata or get_metadata(load_db_codes=include_values, use_cache=use_cache)
-
-    # 1) Schema prune
+    # 1) Schema prune 修剪掉不相关的表和列
     t0 = time.perf_counter()
     pruned = get_pruned_schema(q, md, use_cache=use_cache)
     timing.prune_ms = _elapsed_ms(t0)
