@@ -9,6 +9,7 @@ usage:
 notes:
   - data_dt 固定为 20260531（客户信息快照日）
   - 与事实表 data_dt 不对齐，跨表 Join 默认只用 pty_id，不要默认加 data_dt 条件
+  - 注意：客户信息表 data_dt 为 20260531，但持仓/资产/交易表的 data_dt 为 20260331，不要混淆
   - name 字段已脱敏
 columns:
   - name: data_dt

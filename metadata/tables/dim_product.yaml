@@ -13,7 +13,7 @@ notes:
 columns:
   - name: prdt_id
     type: VARCHAR
-    description: 产品ID
+    description: 产品ID（内部使用，用于表关联）
     aliases: [产品编号]
   - name: prdt_name
     type: VARCHAR
@@ -21,8 +21,8 @@ columns:
     aliases: [产品, 证券名称, 基金名称]
   - name: sor_prdt_id
     type: VARCHAR
-    description: 产品代码
-    aliases: [证券代码]
+    description: 产品代码（外部来源，用户查询时常用）
+    aliases: [证券代码, 产品代码]
   - name: market_id
     type: VARCHAR
     description: 市场ID

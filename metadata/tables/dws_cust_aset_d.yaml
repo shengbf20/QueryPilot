@@ -10,6 +10,7 @@ notes:
   - data_dt 为交易日；与客户信息表 Join 只用 pty_id，日期在 WHERE 中单独指定
   - 总资产=coalesce(nm_tot_aset,0)+coalesce(fc_pur_aset,0)
   - 未要求「最新」时优先业务常用快照 20260331（如年龄段资产分布、Q1末）；26年Q1 窗口为 20260101–20260331
+  - 数据库中最新数据日期为 20260331，其他日期查询结果可能为 0；「最新快照日」「最新资产快照日」均指 20260331
 columns:
   - name: data_dt
     type: VARCHAR

@@ -9,6 +9,7 @@ usage:
 notes:
   - sys_source 区分普通账户(nm)与信用账户(fc)
   - ccy 为币种：0人民币、1美元、2港币
+  - 数据库中最新数据日期为 20260331，其他日期查询结果可能为 0；「最新持仓日」「最新快照日」均指 20260331
 columns:
   - name: data_dt
     type: VARCHAR
@@ -27,7 +28,7 @@ columns:
     enum_ref: sys_source
   - name: ccy
     type: VARCHAR
-    description: 币种
+    description: 币种代码（0人民币、1美元、2港币），查询时直接使用代码，不要转换为中文名称
     enum_ref: ccy
   - name: hold_cnt
     type: DECIMAL

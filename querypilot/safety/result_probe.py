@@ -61,6 +61,10 @@ def probe_result(
             suggestions=["检查单位是否为元/万元", "确认是否误用了未聚合的明细行"],
         )
 
+    count_error = _check_count_format(sql, result)
+    if count_error:
+        return count_error
+
     return ProbeResult(triggered=False, code="ok", message="")
 
 
@@ -108,3 +112,49 @@ def _suggestions_from_question(question: str) -> list[str]:
         suggestions.append(f"是否需要取消「超过 {num}{unit}」这类阈值条件？")
     # de-dupe preserve order
     return list(dict.fromkeys(suggestions))
+
+
+def _check_count_format(sql: str, result: QueryResult) -> ProbeResult | None:
+    """检查 COUNT 查询的结果格式是否正确。
+
+    常见问题：使用 GROUP BY + COUNT(DISTINCT) 导致返回多行（每行都是1），
+    而不是期望的单行总数。
+    """
+    if not sql or result.row_count <= 1:
+        return None
+
+    sql_upper = sql.upper()
+
+    # 检测是否是 COUNT 查询（最外层有 COUNT）
+    has_count = bool(re.search(r'SELECT\s+COUNT\s*\(', sql_upper))
+
+    # 检测是否有 GROUP BY（在最外层，不在子查询中）
+    # 简单检测：如果 SQL 中有 GROUP BY，且返回多行，可能是问题
+    has_group_by = 'GROUP BY' in sql_upper
+
+    # 如果有 COUNT 且有 GROUP BY，且返回多行，检查是否所有行都是 1
+    if has_count and has_group_by and result.row_count > 1:
+        # 检查是否所有行的 COUNT 值都是 1（典型的 GROUP BY + COUNT 错误）
+        try:
+            all_ones = all(
+                row[0] == 1
+                for row in result.rows
+                if len(row) > 0 and isinstance(row[0], (int, float))
+            )
+            if all_ones:
+                return ProbeResult(
+                    triggered=True,
+                    code="count_format_error",
+                    message=(
+                        f"COUNT 查询返回了 {result.row_count} 行（每行都是1），"
+                        f"可能是 GROUP BY 使用不当。期望返回单行单列的总数。"
+                    ),
+                    suggestions=[
+                        "检查是否需要使用子查询来统计分组数量",
+                        "例如：SELECT COUNT(*) FROM (SELECT ... GROUP BY ...) AS t"
+                    ],
+                )
+        except (TypeError, IndexError):
+            pass
+
+    return None
