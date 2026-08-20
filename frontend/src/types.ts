@@ -23,6 +23,13 @@ export type HistoryTurn = {
   content: string;
 };
 
+export type ChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  result?: AskResponse;
+};
+
 export type AskResponse = {
   ok: boolean;
   question: string;

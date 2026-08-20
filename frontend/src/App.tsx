@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import "./App.css";
 import { ApiError, exportCsv, postAsk } from "./api";
+import ChatMode from "./ChatMode";
 import { MOCK_ASK_RESPONSE, MOCK_DEGRADED_RESPONSE } from "./mock";
 import type { AskResponse, HistoryTurn } from "./types";
 
@@ -20,6 +21,7 @@ function formatCell(value: unknown): string {
 }
 
 export default function App() {
+  const [uiMode, setUiMode] = useState<"lab" | "chat">("lab");
   const [question, setQuestion] = useState(MOCK_ASK_RESPONSE.question);
   const [result, setResult] = useState<AskResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -138,13 +140,42 @@ export default function App() {
   }
 
   return (
-    <div className="app">
+    <div className={uiMode === "chat" ? "app app-chat" : "app"}>
       <header className="header">
-        <h1>QueryPilot</h1>
-        <p>自然语言问数 · Schema 剪枝与耗时透明化</p>
-        <span className="badge">LIVE · /api/ask via Vite proxy</span>
+        <div className="header-row">
+          <div>
+            <h1>QueryPilot</h1>
+            {uiMode === "lab" ? (
+              <>
+                <p>自然语言问数 · Schema 剪枝与耗时透明化</p>
+                <span className="badge">LIVE · /api/ask via Vite proxy</span>
+              </>
+            ) : null}
+          </div>
+          <div className="mode-toggle" role="tablist" aria-label="界面模式">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={uiMode === "lab"}
+              className={uiMode === "lab" ? "active" : ""}
+              onClick={() => setUiMode("lab")}
+            >
+              问数
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={uiMode === "chat"}
+              className={uiMode === "chat" ? "active" : ""}
+              onClick={() => setUiMode("chat")}
+            >
+              对话
+            </button>
+          </div>
+        </div>
       </header>
 
+      <div hidden={uiMode !== "lab"}>
       <section className="composer">
         <textarea
           value={question}
@@ -312,6 +343,11 @@ export default function App() {
           ) : null}
         </>
       )}
+      </div>
+
+      <div hidden={uiMode !== "chat"} className="chat-host">
+        <ChatMode seedQuestion={result?.question} seedResult={result} />
+      </div>
     </div>
   );
 }
