@@ -22,6 +22,7 @@ from querypilot.config import get_settings
 from querypilot.eval.dataset import load_qa_cases, load_qa_cases_many
 from querypilot.eval.execution_match import compare_results
 from querypilot.eval.models import CaseEvalResult, EvalCase, EvalReport, TimingInfo
+from querypilot.eval.safety_match import is_safety_refuse_case, safety_refusal_match
 
 AskFn = Callable[..., Any]
 ExecuteFn = Callable[..., Any]
@@ -87,6 +88,8 @@ def run_case(
 ) -> CaseEvalResult:
     """评测一条金标用例：ask → execute(gold_sql) → EX 比对 → 计时。
 
+    Extra3（``eval_mode=safety_refuse``）不执行金标 SQL，以「拒绝 + 安全警告」为做对。
+
     ``ask_fn`` / ``execute_fn`` 可覆盖默认实现（供测试）。单条失败时置 ``matched=False``
     并填写 ``error`` / ``stage``，不向外抛异常。
     """
@@ -143,6 +146,44 @@ def run_case(
             # 正常返回且pipe.ok为False
             error = str(getattr(pipe, "message", "") or "ask failed") # 设置错误信息
             stage = str(getattr(pipe, "stage", "") or "ask") # 设置stage为ask
+
+    if is_safety_refuse_case(case):
+        matched, score, match_reason = safety_refusal_match(pipe)
+        gold_ok = True
+        if matched:
+            error = ""
+            stage = str(getattr(pipe, "stage", "") or "safety")
+        elif not error:
+            error = match_reason
+        total_ms = _elapsed_ms(t_all)
+        stage_timing = getattr(pipe, "timing", None) if pipe is not None else None
+        return CaseEvalResult(
+            case_id=case.id,
+            question=case.question,
+            matched=matched,
+            score=score,
+            gold_sql=case.gold_sql,
+            pred_sql=pred_sql,
+            ask_ok=ask_ok,
+            gold_ok=gold_ok,
+            error=error,
+            match_reason=match_reason,
+            difficulty=case.difficulty,
+            timing=TimingInfo(
+                total_ms=total_ms,
+                ask_ms=ask_ms,
+                gold_execute_ms=0.0,
+                match_ms=0.0,
+                prune_ms=float(getattr(stage_timing, "prune_ms", 0.0) or 0.0),
+                generate_ms=float(getattr(stage_timing, "generate_ms", 0.0) or 0.0),
+                l1_ms=float(getattr(stage_timing, "l1_ms", 0.0) or 0.0),
+                l2_ms=float(getattr(stage_timing, "l2_ms", 0.0) or 0.0),
+                execute_ms=float(getattr(stage_timing, "execute_ms", 0.0) or 0.0),
+                probe_ms=float(getattr(stage_timing, "probe_ms", 0.0) or 0.0),
+                cache_hit=bool(getattr(stage_timing, "cache_hit", False)),
+            ),
+            stage=stage,
+        )
 
     # --- gold SQL ---
     t0 = time.perf_counter()

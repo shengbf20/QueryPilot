@@ -67,6 +67,21 @@ def ask(
             timing=timing,
         )
 
+    from querypilot.safety.intent_guard import check_malicious_intent, format_safety_message
+
+    intent_reason = check_malicious_intent(q)
+    if intent_reason:
+        timing.total_ms = _elapsed_ms(t_all)
+        return PipelineResult(
+            ok=False,
+            question=q,
+            degraded=True,
+            message=format_safety_message(intent_reason),
+            stage="safety",
+            timing=timing,
+            extras={"safety_reason": intent_reason},
+        )
+
     # 可选的并行度量模式，尝试将多指标问题拆成子查询并行执行
     if use_parallel:
         from querypilot.agent.parallel import try_parallel_pipeline # 导入并行管道

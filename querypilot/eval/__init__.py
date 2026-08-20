@@ -23,6 +23,10 @@ from querypilot.eval.eval_agent import (
     save_diagnoses,
 )
 from querypilot.eval.execution_match import compare_results, execution_match
+from querypilot.eval.safety_match import (
+    is_safety_refuse_case,
+    safety_refusal_match,
+)
 from querypilot.eval.models import (
     BUCKET_AUTO_PASS,
     BUCKET_BAD_CASE,
@@ -85,6 +89,8 @@ __all__ = [
     "diagnose_failures",
     "execution_match",
     "find_ticket",
+    "is_safety_refuse_case",
+    "safety_refusal_match",
     "format_baseline_markdown",
     "format_review_queue",
     "load_baseline",

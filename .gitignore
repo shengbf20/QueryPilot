@@ -16,3 +16,4 @@ artifacts/eval/
 dist/
 build/
 .DS_Store
+.history/
