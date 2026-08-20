@@ -6,7 +6,7 @@ import duckdb
 from openai import OpenAI
 
 from querypilot.agent.prompt import SYSTEM_PROMPT
-from querypilot.agent.sql_generator import parse_sql_payload
+from querypilot.agent.sql_generator import SqlGenerationError, parse_sql_payload
 from querypilot.db import ExplainResult, explain
 from querypilot.llm.chat import generate_json
 from querypilot.metadata_engine.bundle import MetadataBundle
@@ -83,7 +83,9 @@ def correct_sql_once(
         max_tokens=max_tokens,
         client=client,
     )
-    sql, rationale, _uses_cte = parse_sql_payload(raw)
+    sql, rationale, _uses_cte, clarify = parse_sql_payload(raw)
+    if not sql:
+        raise SqlGenerationError(clarify or "correction returned no SQL")
     return sql, rationale, raw
 
 

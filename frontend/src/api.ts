@@ -1,4 +1,4 @@
-import type { AskResponse } from "./types";
+import type { AskResponse, HistoryTurn } from "./types";
 
 export class ApiError extends Error {
   status: number;
@@ -22,11 +22,14 @@ async function readErrorMessage(resp: Response): Promise<string> {
   return text || `HTTP ${resp.status}`;
 }
 
-export async function postAsk(question: string): Promise<AskResponse> {
+export async function postAsk(
+  question: string,
+  history: HistoryTurn[] = [],
+): Promise<AskResponse> {
   const resp = await fetch("/api/ask", {
     method: "POST",
     headers: { "Content-Type": "application/json; charset=utf-8" },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, history }),
   });
   if (!resp.ok) {
     throw new ApiError(await readErrorMessage(resp), resp.status);

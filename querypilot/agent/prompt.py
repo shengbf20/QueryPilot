@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -18,7 +20,7 @@ _CJK_RE = re.compile(r"[\u4e00-\u9fff]{2,}")
 SYSTEM_PROMPT = """你是证券客户营销场景下的 DuckDB SQL 专家。根据用户问题和提供的精简 Schema，生成一条可执行的只读 SQL。
 
 硬性规则：
-1. 只输出 JSON 对象，字段必须包含：sql（字符串）、rationale（简短中文思路）、uses_cte（布尔）。
+1. 只输出 JSON 对象，字段必须包含：sql（字符串）、rationale（简短中文思路）、uses_cte（布尔）；可选 clarify（字符串）。
 2. 只允许 SELECT / WITH 查询；禁止 INSERT/UPDATE/DELETE/DROP/ATTACH/COPY/CREATE 等。
 3. 只能使用「相关表结构」中出现的表名与字段名；不要臆造表或列（禁止不存在的 pnl/盈亏事实表）。
 4. 跨表关联默认只用业务键 pty_id 或 org_id；除非用户明确指定日期，否则不要把不同表的 data_dt 作为 Join 条件。
@@ -41,7 +43,59 @@ SYSTEM_PROMPT = """你是证券客户营销场景下的 DuckDB SQL 专家。根�
 21. 现金净流入= SUM(cash_in)-SUM(cash_out)（可 coalesce）；不要做成只 SUM(cash_in)，也不要套用期间盈亏的 cash+tran+assign 总流入。题面写「现金净流入/现金流入减现金流出」时严格只用 cash_* 两列。
 22. 日均资产：分母为过滤窗口的日历天数（含首尾），DATE 差值必须与 WHERE data_dt BETWEEN 的起止日一致（如 2 月整月用 20260201–20260228，分母 28）。用持仓/交易条件先圈选客户后，若题目要「其持仓按产品大类汇总」，应对圈选客户的全部持仓 GROUP BY up_prdt_type_name，不要把筛选用的产品类再限制最终聚合。
 23. 两段时间窗对比（如「3 月高于 1 月」）：两窗各自聚合后必须 INNER JOIN（两窗都要有记录），禁止把缺失窗当作 0 再比较（勿 LEFT JOIN + coalesce(...,0) 放宽圈选）。
+24. 若用户需求不明确（缺少指标、时间、客群或输出形态，无法写出唯一合理 SQL），不要猜测、不要输出 SQL：sql 置为空字符串，clarify 用 1～3 句中文追问意图。信息足够时 clarify 必须为空且必须输出 SQL。禁止对已经可执行的营销取数问题无故澄清。
 """
+
+CLARIFY_ONE_SHOT = """澄清示例（仅当问题不可判定时模仿；可判定时不要澄清）:
+问题: 帮我看看客户情况
+思路: 缺少指标、时间和输出形态，无法唯一确定 SQL。
+SQL:
+澄清: 您要统计人数、资产还是持仓？是否限定日期或客群（如年龄、性别）？"""
+
+
+def normalize_history(
+    question: str,
+    history: Sequence[Mapping[str, Any]] | None = None,
+) -> list[dict[str, str]]:
+    """Flatten prior turns + current user text into role/content dicts."""
+    turns: list[dict[str, str]] = []
+    for item in history or []:
+        role = str(item.get("role", "")).strip().lower()
+        content = str(item.get("content", "")).strip()
+        if role not in {"user", "assistant"} or not content:
+            continue
+        turns.append({"role": role, "content": content})
+    q = (question or "").strip()
+    if q and (not turns or turns[-1] != {"role": "user", "content": q}):
+        turns.append({"role": "user", "content": q})
+    return turns
+
+
+def compose_prune_text(
+    question: str,
+    history: Sequence[Mapping[str, Any]] | None = None,
+) -> str:
+    """Join all user utterances for schema pruning."""
+    parts = [
+        t["content"]
+        for t in normalize_history(question, history)
+        if t["role"] == "user"
+    ]
+    return " ".join(parts).strip() or (question or "").strip()
+
+
+def format_history_block(turns: Sequence[Mapping[str, str]]) -> str:
+    """Render conversation after the original user question."""
+    if len(turns) <= 1:
+        return ""
+    lines = [
+        "对话补充（上轮助手提问与用户追加；请接在原问题后继续。"
+        "信息足够则输出 SQL 且 clarify 为空，仍不够则继续澄清、sql 为空）:"
+    ]
+    for turn in turns[1:]:
+        label = "用户" if turn["role"] == "user" else "助手"
+        lines.append(f"{label}: {turn['content']}")
+    return "\n".join(lines)
 
 
 def load_few_shots(path: Path | None = None) -> list[FewShotExample]:
@@ -134,14 +188,16 @@ def build_prompt(
     few_shots: list[FewShotExample] | None = None,
     include_values: bool = True,
     max_few_shots: int = 3,
+    history: Sequence[Mapping[str, Any]] | None = None,
 ) -> PromptBundle:
     """Assemble system + user prompts from pruned schema and few-shots."""
-    q = question.strip()
-    if not q:
+    turns = normalize_history(question, history)
+    original = next((t["content"] for t in turns if t["role"] == "user"), question.strip())
+    if not original:
         raise ValueError("question must be non-empty")
 
     pool = few_shots if few_shots is not None else load_few_shots()
-    shots = select_few_shots(q, pool, max_few_shots=max_few_shots)
+    shots = select_few_shots(original, pool, max_few_shots=max_few_shots)
 
     schema_block = pruned.format_for_prompt(
         metadata,
@@ -150,7 +206,7 @@ def build_prompt(
     )
 
     parts: list[str] = [
-        f"用户问题:\n{q}",
+        f"用户问题:\n{original}",
         "",
         schema_block,
     ]
@@ -164,18 +220,23 @@ def build_prompt(
                 parts.append(f"思路: {ex.rationale}")
             parts.append(f"SQL:\n{ex.sql}")
 
+    parts.extend(["", CLARIFY_ONE_SHOT])
+    history_block = format_history_block(turns)
+    if history_block:
+        parts.extend(["", history_block])
+
     parts.extend(
         [
             "",
             "请输出 JSON，例如:",
-            '{"sql":"SELECT ...","rationale":"...","uses_cte":false}',
+            '{"sql":"SELECT ...","rationale":"...","uses_cte":false,"clarify":""}',
         ]
     )
 
     return PromptBundle(
         system=SYSTEM_PROMPT,
         user="\n".join(parts),
-        question=q,
+        question=original,
         tables=list(pruned.tables),
         few_shot_count=len(shots),
     )

@@ -192,6 +192,16 @@ table.result th {
   padding-left: 1.1rem;
 }
 
+.clarify {
+  margin: 0.4rem 0 0;
+  padding: 0.7rem 0.85rem;
+  border-radius: 8px;
+  background: #eef6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+  font-size: 0.92rem;
+}
+
 .muted {
   color: var(--muted);
   font-size: 0.9rem;

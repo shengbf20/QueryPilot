@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from openai import OpenAI
@@ -17,12 +18,13 @@ class SqlGenerationError(ValueError):
     """Raised when the model response cannot yield a usable SQL string."""
 
 
-def parse_sql_payload(data: dict[str, Any]) -> tuple[str, str, bool]:
-    """Extract (sql, rationale, uses_cte) from a model JSON object."""
-    if "sql" not in data:
+def parse_sql_payload(data: dict[str, Any]) -> tuple[str, str, bool, str]:
+    """Extract (sql, rationale, uses_cte, clarify) from a model JSON object."""
+    clarify = str(data.get("clarify", "")).strip()
+    if "sql" not in data and not clarify:
         raise SqlGenerationError(f"Missing 'sql' field in model response: {sorted(data.keys())}")
-    sql = str(data["sql"]).strip()
-    if not sql:
+    sql = str(data.get("sql", "")).strip()
+    if not sql and not clarify:
         raise SqlGenerationError("Empty 'sql' field in model response")
 
     # Tolerate accidental markdown fences around SQL.
@@ -36,9 +38,12 @@ def parse_sql_payload(data: dict[str, Any]) -> tuple[str, str, bool]:
 
     rationale = str(data.get("rationale", "")).strip()
     uses_cte = bool(data.get("uses_cte", False))
-    if not uses_cte and sql.lstrip().upper().startswith("WITH"):
+    if sql and not uses_cte and sql.lstrip().upper().startswith("WITH"):
         uses_cte = True
-    return sql, rationale, uses_cte
+    if clarify:
+        sql = ""
+        uses_cte = False
+    return sql, rationale, uses_cte, clarify
 
 
 def _generate_json_once_with_retry(
@@ -80,16 +85,19 @@ def generate_sql(
     temperature: float = 0.0,
     max_tokens: int | None = 1200,
     allow_exact_few_shot: bool = True,
+    history: Sequence[Mapping[str, Any]] | None = None,
 ) -> SqlGenerationResult:
     """Prune schema (unless provided), build prompt, call LLM, return structured SQL.
 
     When ``allow_exact_few_shot`` and a HITL few-shot matches the question exactly,
     return that SQL without calling the LLM (stable reflux for known cases).
     """
+    from querypilot.agent.prompt import compose_prune_text
     from querypilot.cache.metadata_cache import get_metadata, get_pruned_schema
 
     md = metadata or get_metadata(load_db_codes=include_values)
-    pruned_schema = pruned or get_pruned_schema(question, md)
+    prune_text = compose_prune_text(question, history)
+    pruned_schema = pruned or get_pruned_schema(prune_text, md)
     pool = few_shots if few_shots is not None else load_few_shots()
     prompt = build_prompt(
         question,
@@ -98,9 +106,10 @@ def generate_sql(
         few_shots=pool,
         include_values=include_values,
         max_few_shots=max_few_shots,
+        history=history,
     )
 
-    if allow_exact_few_shot:
+    if allow_exact_few_shot and not history:
         hit = find_exact_few_shot(question, pool)
         if hit is not None:
             uses_cte = hit.sql.lstrip().upper().startswith("WITH")
@@ -127,11 +136,12 @@ def generate_sql(
         max_tokens=max_tokens,
         client=client,
     )
-    sql, rationale, uses_cte = parse_sql_payload(raw)
+    sql, rationale, uses_cte, clarify = parse_sql_payload(raw)
     return SqlGenerationResult(
         sql=sql,
         rationale=rationale,
         uses_cte=uses_cte,
+        clarify=clarify,
         raw=raw,
         prompt=prompt,
         pruned=pruned_schema,
@@ -153,11 +163,12 @@ def generate_sql_from_prompt(
         max_tokens=max_tokens,
         client=client,
     )
-    sql, rationale, uses_cte = parse_sql_payload(raw)
+    sql, rationale, uses_cte, clarify = parse_sql_payload(raw)
     return SqlGenerationResult(
         sql=sql,
         rationale=rationale,
         uses_cte=uses_cte,
+        clarify=clarify,
         raw=raw,
         prompt=prompt,
     )

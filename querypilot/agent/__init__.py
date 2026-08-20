@@ -14,8 +14,10 @@ from querypilot.agent.models import (
 from querypilot.agent.prompt import (
     SYSTEM_PROMPT,
     build_prompt,
+    compose_prune_text,
     find_exact_few_shot,
     load_few_shots,
+    normalize_history,
     select_few_shots,
 )
 from querypilot.agent.sql_generator import (
@@ -38,7 +40,9 @@ __all__ = [
     "StageTiming",
     "ask",
     "build_prompt",
+    "compose_prune_text",
     "generate_sql",
+    "normalize_history",
     "generate_sql_from_prompt",
     "find_exact_few_shot",
     "load_few_shots",

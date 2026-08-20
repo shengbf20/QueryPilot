@@ -135,6 +135,58 @@ def test_ask_pipeline_with_fake_client_success(metadata):
     assert client.chat.completions.calls == 1
 
 
+def test_ask_pipeline_clarify_skips_execute(metadata):
+    client = _FakeClient(
+        [
+            '{"sql":"","rationale":"缺指标","uses_cte":false,'
+            '"clarify":"您要统计人数、资产还是持仓？"}'
+        ]
+    )
+    out = ask(
+        "帮我看看客户情况",
+        metadata=metadata,
+        client=client,
+        include_values=False,
+        max_few_shots=0,
+        use_cache=False,
+    )
+    assert out.ok
+    assert out.stage == "clarify"
+    assert out.sql == ""
+    assert "人数" in out.message
+    assert out.extras.get("needs_clarify") is True
+    assert out.rows == []
+    assert client.chat.completions.calls == 1
+
+
+@requires_db
+def test_ask_pipeline_followup_history_generates_sql(metadata):
+    client = _FakeClient(
+        [
+            '{"sql":"SELECT COUNT(*) AS cnt FROM ads_cust_info_d '
+            "WHERE cust_age > 30 AND gender_cd = '5000003'\","
+            '"rationale":"补充后可写 SQL","uses_cte":false,"clarify":""}'
+        ]
+    )
+    out = ask(
+        "只要30岁以上女性人数",
+        metadata=metadata,
+        client=client,
+        include_values=False,
+        max_few_shots=0,
+        use_cache=False,
+        history=[
+            {"role": "user", "content": "帮我看看客户情况"},
+            {"role": "assistant", "content": "您要统计人数还是资产？"},
+        ],
+    )
+    assert out.ok, out.message
+    assert out.stage == "done"
+    assert out.sql
+    assert out.stage != "clarify"
+    assert client.chat.completions.calls == 1
+
+
 @requires_db
 def test_ask_pipeline_l1_blocks_dangerous_sql(metadata):
     client = _FakeClient(

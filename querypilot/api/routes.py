@@ -24,11 +24,13 @@ def health() -> HealthResponse:
 def api_ask(body: AskRequest) -> JSONResponse:
     from querypilot.agent import ask
 
+    history = [{"role": t.role, "content": t.content} for t in body.history]
     result = ask(
         body.question.strip(),
         max_rows=body.max_rows,
         use_cache=body.use_cache,
         use_parallel=body.use_parallel,
+        history=history or None,
     )
     payload = pipeline_result_to_api_dict(result, max_rows=body.max_rows)
     # Explicit charset helps Windows clients / proxies display Chinese correctly.

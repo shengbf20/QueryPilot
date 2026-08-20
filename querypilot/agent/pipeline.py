@@ -7,8 +7,12 @@ import time
 import duckdb
 from openai import OpenAI
 
+from collections.abc import Mapping, Sequence
+from typing import Any
+
 from querypilot.agent.models import PipelineResult, StageTiming
 from querypilot.agent.pnl_fix import fix_period_pnl_sql
+from querypilot.agent.prompt import compose_prune_text
 from querypilot.agent.sql_generator import generate_sql
 from querypilot.agent.topn_fix import fix_org_topn_sql
 from querypilot.cache.metadata_cache import get_metadata, get_pruned_schema
@@ -49,6 +53,7 @@ def ask(
     use_cache: bool | None = None,
     cache_rows: bool | None = None,
     use_parallel: bool = False,
+    history: Sequence[Mapping[str, Any]] | None = None,
 ) -> PipelineResult:
     """为一个自然语言问题运行完整的QueryPilot Pipeline"""
     t_all = time.perf_counter()
@@ -69,7 +74,8 @@ def ask(
 
     from querypilot.safety.intent_guard import check_malicious_intent, format_safety_message
 
-    intent_reason = check_malicious_intent(q)
+    prune_q = compose_prune_text(q, history)
+    intent_reason = check_malicious_intent(q) or check_malicious_intent(prune_q)
     if intent_reason:
         timing.total_ms = _elapsed_ms(t_all)
         return PipelineResult(
@@ -121,7 +127,7 @@ def ask(
         allow_exact_few_shot=allow_exact_few_shot,
         cache_rows=want_rows,
     )
-    cached = get_cached_query(cache_key, use_cache=use_cache)
+    cached = None if history else get_cached_query(cache_key, use_cache=use_cache)
     if cached is not None and cached.sql:
         # 如果缓存命中，则从缓存中获取结果
         return _finish_from_cache(
@@ -139,7 +145,7 @@ def ask(
 
     # 1) Schema prune 修剪掉不相关的表和列
     t0 = time.perf_counter()
-    pruned = get_pruned_schema(q, md, use_cache=use_cache)
+    pruned = get_pruned_schema(prune_q, md, use_cache=use_cache)
     timing.prune_ms = _elapsed_ms(t0)
     schema_context = pruned.format_for_prompt(md, include_values=include_values)
     allowed = list(pruned.tables)
@@ -154,7 +160,8 @@ def ask(
             include_values=include_values,
             max_few_shots=max_few_shots,
             client=client,
-            allow_exact_few_shot=allow_exact_few_shot,
+            allow_exact_few_shot=allow_exact_few_shot and not history,
+            history=history,
         )
     except Exception as exc:  # noqa: BLE001
         timing.generate_ms = _elapsed_ms(t0)
@@ -170,6 +177,21 @@ def ask(
             timing=timing,
         )
     timing.generate_ms = _elapsed_ms(t0)
+
+    if gen.clarify and not gen.sql:
+        timing.total_ms = _elapsed_ms(t_all)
+        return PipelineResult(
+            ok=True,
+            question=q,
+            sql="",
+            rationale=gen.rationale,
+            tables=allowed,
+            message=gen.clarify,
+            stage="clarify",
+            pruned=pruned,
+            timing=timing,
+            extras={"needs_clarify": True, "clarify": gen.clarify},
+        )
 
     sql = fix_org_topn_sql(fix_period_pnl_sql(gen.sql))
 
@@ -293,7 +315,8 @@ def ask(
         row_count=data.row_count if want_rows else 0,
         has_rows=want_rows,
     )
-    put_cached_query(cache_key, entry, use_cache=use_cache)
+    if not history:
+        put_cached_query(cache_key, entry, use_cache=use_cache)
     return result
 
 

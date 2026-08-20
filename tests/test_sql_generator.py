@@ -100,6 +100,8 @@ def test_system_prompt_hard_rules():
     # P1: dict literal / branch projection / asset ownership / no physical tran_amt
     assert "7000032" in SYSTEM_PROMPT
     assert "非公职" in SYSTEM_PROMPT
+    assert "clarify" in SYSTEM_PROMPT
+    assert "不要猜测" in SYSTEM_PROMPT or "不明确" in SYSTEM_PROMPT
     assert "只输出 pty_id" in SYSTEM_PROMPT
     assert "不要加 up_org_name" in SYSTEM_PROMPT
     assert "dws_cust_aset_d" in SYSTEM_PROMPT
@@ -239,6 +241,29 @@ def test_build_prompt_can_disable_few_shots(metadata, pruner):
     prompt = build_prompt("客户年龄分布", pruned, metadata, few_shots=[], max_few_shots=3)
     assert prompt.few_shot_count == 0
     assert "参考示例" not in prompt.user
+    assert "澄清示例" in prompt.user
+    assert "帮我看看客户情况" in prompt.user
+
+
+def test_build_prompt_appends_history_after_original(metadata, pruner):
+    pruned = pruner.prune("帮我看看客户情况")
+    prompt = build_prompt(
+        "只要30岁以上女性人数",
+        pruned,
+        metadata,
+        few_shots=[],
+        history=[
+            {"role": "user", "content": "帮我看看客户情况"},
+            {"role": "assistant", "content": "您要统计人数还是资产？"},
+        ],
+    )
+    assert prompt.question == "帮我看看客户情况"
+    assert "对话补充" in prompt.user
+    assert "您要统计人数还是资产" in prompt.user
+    assert "只要30岁以上女性人数" in prompt.user
+    user_idx = prompt.user.find("用户问题:")
+    hist_idx = prompt.user.find("对话补充")
+    assert 0 <= user_idx < hist_idx
 
 
 def test_build_prompt_empty_question_raises(metadata, pruner):
@@ -262,22 +287,24 @@ def test_build_prompt_includes_enum_values_when_available(metadata, pruner):
 
 
 def test_parse_sql_payload_ok():
-    sql, rationale, uses_cte = parse_sql_payload(
+    sql, rationale, uses_cte, clarify = parse_sql_payload(
         {"sql": "SELECT 1", "rationale": "ok", "uses_cte": False}
     )
     assert sql == "SELECT 1"
     assert rationale == "ok"
     assert uses_cte is False
+    assert clarify == ""
 
 
 def test_parse_sql_payload_detects_with():
-    sql, _, uses_cte = parse_sql_payload({"sql": "WITH x AS (SELECT 1) SELECT * FROM x"})
+    sql, _, uses_cte, clarify = parse_sql_payload({"sql": "WITH x AS (SELECT 1) SELECT * FROM x"})
+    assert clarify == ""
     assert uses_cte is True
     assert sql.startswith("WITH")
 
 
 def test_parse_sql_payload_strips_sql_fence():
-    sql, _, _ = parse_sql_payload({"sql": "```sql\nSELECT 1\n```"})
+    sql, _, _, _ = parse_sql_payload({"sql": "```sql\nSELECT 1\n```"})
     assert sql == "SELECT 1"
 
 
@@ -289,6 +316,16 @@ def test_parse_sql_payload_missing_sql():
 def test_parse_sql_payload_empty_sql():
     with pytest.raises(SqlGenerationError):
         parse_sql_payload({"sql": "  "})
+
+
+def test_parse_sql_payload_clarify_allows_empty_sql():
+    sql, rationale, uses_cte, clarify = parse_sql_payload(
+        {"sql": "", "rationale": "缺时间", "clarify": "请问要哪一天的快照？"}
+    )
+    assert sql == ""
+    assert uses_cte is False
+    assert "哪一天" in clarify
+    assert rationale == "缺时间"
 
 
 # ---------------------------------------------------------------------------

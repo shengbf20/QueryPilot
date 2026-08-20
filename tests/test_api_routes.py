@@ -68,6 +68,27 @@ def test_api_ask_uses_ask_and_serializes() -> None:
     assert kwargs["max_rows"] == 50
     assert kwargs["use_cache"] is True
     assert kwargs["use_parallel"] is False
+    assert kwargs["history"] is None
+
+
+def test_api_ask_forwards_history() -> None:
+    app = create_app()
+    client = TestClient(app)
+    with patch("querypilot.agent.pipeline.ask", return_value=_fake_result()) as mocked:
+        resp = client.post(
+            "/api/ask",
+            json={
+                "question": "只要人数",
+                "history": [
+                    {"role": "user", "content": "帮我看看客户"},
+                    {"role": "assistant", "content": "人数还是资产？"},
+                ],
+            },
+        )
+    assert resp.status_code == 200
+    hist = mocked.call_args.kwargs["history"]
+    assert hist[0]["role"] == "user"
+    assert hist[-1]["content"] == "人数还是资产？"
 
 
 def test_api_ask_rejects_empty_question() -> None:

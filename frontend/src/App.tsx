@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import "./App.css";
 import { ApiError, exportCsv, postAsk } from "./api";
 import { MOCK_ASK_RESPONSE, MOCK_DEGRADED_RESPONSE } from "./mock";
-import type { AskResponse } from "./types";
+import type { AskResponse, HistoryTurn } from "./types";
 
 const TIMING_STEPS: { key: keyof AskResponse["timing"]; label: string }[] = [
   { key: "prune_ms", label: "剪枝" },
@@ -25,11 +25,13 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [statusHint, setStatusHint] = useState("");
+  const [history, setHistory] = useState<HistoryTurn[]>([]);
 
+  const clarifying = result?.stage === "clarify" || history.some((t) => t.role === "assistant");
   const hasProbe =
     Boolean(result?.probe_message) ||
     Boolean(result?.probe_suggestions?.length) ||
-    Boolean(result?.degraded && result?.message);
+    Boolean(result?.degraded && result?.message && result.stage !== "clarify");
 
   const chipTables = useMemo(() => {
     if (!result) return [];
@@ -54,18 +56,31 @@ export default function App() {
     setStatusHint("");
     const previous = result;
     try {
-      const data = await postAsk(q);
+      const data = await postAsk(q, history);
       setResult(data);
-      if (data.timing.cache_hit) {
-        const prev =
-          previous && previous.question === q
-            ? `（上次同题 total_ms=${previous.timing.total_ms.toFixed(1)}）`
-            : "";
-        setStatusHint(`缓存命中：total_ms=${data.timing.total_ms.toFixed(1)}${prev}`);
+      if (data.stage === "clarify" && data.message) {
+        const prior = history.length ? [...history] : [];
+        const last = prior[prior.length - 1];
+        if (!last || last.role !== "user" || last.content !== q) {
+          prior.push({ role: "user", content: q });
+        }
+        prior.push({ role: "assistant", content: data.message });
+        setHistory(prior);
+        setQuestion("");
+        setStatusHint("需求不明确，请根据模型提问追加说明后再发送。");
       } else {
-        setStatusHint(
-          `冷路径：total_ms=${data.timing.total_ms.toFixed(1)}。同题再发送一次可演示 cache_hit。`,
-        );
+        setHistory([]);
+        if (data.timing.cache_hit) {
+          const prev =
+            previous && previous.question === q
+              ? `（上次同题 total_ms=${previous.timing.total_ms.toFixed(1)}）`
+              : "";
+          setStatusHint(`缓存命中：total_ms=${data.timing.total_ms.toFixed(1)}${prev}`);
+        } else {
+          setStatusHint(
+            `冷路径：total_ms=${data.timing.total_ms.toFixed(1)}。同题再发送一次可演示 cache_hit。`,
+          );
+        }
       }
     } catch (err) {
       const msg =
@@ -134,13 +149,13 @@ export default function App() {
         <textarea
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
-          placeholder="输入自然语言问题…"
+          placeholder={clarifying ? "针对模型提问追加说明…" : "输入自然语言问题…"}
           aria-label="问句"
           disabled={loading}
         />
         <div className="composer-actions">
           <button type="button" onClick={onAsk} disabled={loading}>
-            {loading ? "询问中…" : "发送"}
+            {loading ? "询问中…" : clarifying ? "追加说明" : "发送"}
           </button>
           <button
             type="button"
@@ -226,9 +241,27 @@ export default function App() {
             ) : null}
           </section>
 
+          {result.stage === "clarify" || history.length > 0 ? (
+            <section className="panel">
+              <h2>模型提问 · 追加说明</h2>
+              {history.map((turn, i) => (
+                <p key={`${turn.role}-${i}`} className={turn.role === "assistant" ? "clarify" : "muted"}>
+                  <strong>{turn.role === "assistant" ? "助手" : "你"}：</strong>
+                  {turn.content}
+                </p>
+              ))}
+              {result.stage === "clarify" && result.message && history.every((t) => t.content !== result.message) ? (
+                <p className="clarify">
+                  <strong>助手：</strong>
+                  {result.message}
+                </p>
+              ) : null}
+            </section>
+          ) : null}
+
           <section className="panel">
             <h2>SQL 预览 · stage={result.stage || "-"}</h2>
-            <pre className="sql">{result.sql || "(无 SQL)"}</pre>
+            <pre className="sql">{result.sql || (result.stage === "clarify" ? "(等待补充后生成 SQL)" : "(无 SQL)")}</pre>
           </section>
 
           <section className="panel">

@@ -18,6 +18,11 @@ export type PruneSummary = {
   metrics: string[];
 };
 
+export type HistoryTurn = {
+  role: "user" | "assistant";
+  content: string;
+};
+
 export type AskResponse = {
   ok: boolean;
   question: string;

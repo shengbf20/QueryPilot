@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from typing import Sequence
 
 from querypilot import __version__
@@ -47,6 +48,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--parallel",
         action="store_true",
         help="Try rule-based multi-metric parallel plan (fallback to normal ask)",
+    )
+    ask_parser.add_argument(
+        "--no-followup",
+        action="store_true",
+        help="Do not prompt for follow-up when the model asks a clarifying question",
     )
 
     eval_parser = sub.add_parser("eval", help="Run Execution Match eval on gold Q&A cases")
@@ -196,8 +202,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def format_pipeline_result(result: PipelineResult, *, max_print_rows: int = 20) -> str:
     """Pretty-print a PipelineResult for CLI / demo."""
+    if result.stage == "clarify":
+        status = "clarify"
+    else:
+        status = "ok" if result.ok else "failed"
     lines: list[str] = [
-        f"status: {'ok' if result.ok else 'failed'}"
+        f"status: {status}"
         + (" (degraded)" if result.degraded else "")
         + (" (corrected)" if result.corrected else ""),
         f"stage: {result.stage or '-'}",
@@ -217,12 +227,16 @@ def format_pipeline_result(result: PipelineResult, *, max_print_rows: int = 20) 
         lines.append(result.sql)
     if result.rationale:
         lines.append(f"rationale: {result.rationale}")
-    if result.message:
+    if result.message and result.stage != "clarify":
         lines.append(f"message: {result.message}")
     if result.probe_suggestions:
         lines.append("probe suggestions:")
         for tip in result.probe_suggestions:
             lines.append(f"  - {tip}")
+
+    if result.stage == "clarify" and result.message:
+        lines.append("模型提问:")
+        lines.append(result.message)
 
     if result.ok and result.columns:
         lines.append(f"rows: {result.row_count}")
@@ -274,15 +288,34 @@ def main(argv: Sequence[str] | None = None) -> int:
         from querypilot.agent import ask
 
         question = " ".join(args.question).strip()
-        result = ask(
-            question,
+        ask_kwargs = dict(
             max_rows=args.max_rows,
             max_few_shots=args.max_few_shots,
             use_cache=False if args.no_cache else None,
             cache_rows=True if args.cache_rows else None,
             use_parallel=bool(args.parallel),
         )
+        history: list[dict[str, str]] = []
+        result = ask(question, history=None, **ask_kwargs)
         print(format_pipeline_result(result, max_print_rows=args.max_rows))
+        allow_followup = (not args.no_followup) and sys.stdin.isatty()
+        current = question
+        while result.stage == "clarify" and allow_followup:
+            try:
+                follow = input("追加说明（空行结束本轮）: ").strip()
+            except EOFError:
+                break
+            if not follow:
+                break
+            if not history:
+                history.append({"role": "user", "content": current})
+            history.append({"role": "assistant", "content": result.message})
+            history.append({"role": "user", "content": follow})
+            current = follow
+            result = ask(follow, history=history, **ask_kwargs)
+            print(format_pipeline_result(result, max_print_rows=args.max_rows))
+        if result.stage == "clarify":
+            return 0
         return 0 if result.ok else 1
 
     if args.command == "eval":

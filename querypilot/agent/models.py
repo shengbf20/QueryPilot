@@ -39,6 +39,7 @@ class SqlGenerationResult:
     sql: str
     rationale: str = ""
     uses_cte: bool = False
+    clarify: str = ""
     raw: dict[str, Any] = field(default_factory=dict)
     prompt: PromptBundle | None = None
     pruned: PrunedSchema | None = None

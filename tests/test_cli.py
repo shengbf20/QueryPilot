@@ -57,6 +57,53 @@ def test_format_pipeline_result_ok():
     assert "3" in text
 
 
+def test_format_pipeline_result_clarify():
+    result = PipelineResult(
+        ok=True,
+        question="帮我看看客户",
+        message="您要统计人数还是资产？",
+        stage="clarify",
+        extras={"needs_clarify": True},
+    )
+    text = format_pipeline_result(result)
+    assert "status: clarify" in text
+    assert "模型提问:" in text
+    assert "您要统计人数还是资产" in text
+    assert "sql:" not in text
+
+
+def test_main_ask_followup_appends_history(capsys):
+    first = PipelineResult(
+        ok=True,
+        question="帮我看看客户",
+        message="您要人数还是资产？",
+        stage="clarify",
+    )
+    second = PipelineResult(
+        ok=True,
+        question="只要人数",
+        sql="SELECT 1 AS n",
+        columns=["n"],
+        rows=[(1,)],
+        row_count=1,
+        stage="done",
+        message="ok",
+    )
+    with patch("querypilot.agent.ask", side_effect=[first, second]) as mocked:
+        with patch("sys.stdin.isatty", return_value=True):
+            with patch("builtins.input", return_value="只要人数"):
+                code = main(["ask", "帮我看看客户"])
+    assert code == 0
+    assert mocked.call_count == 2
+    hist = mocked.call_args_list[1].kwargs["history"]
+    assert hist[0] == {"role": "user", "content": "帮我看看客户"}
+    assert hist[1]["role"] == "assistant"
+    assert hist[-1] == {"role": "user", "content": "只要人数"}
+    out = capsys.readouterr().out
+    assert "模型提问:" in out
+    assert "SELECT 1 AS n" in out
+
+
 def test_format_pipeline_result_failed_degraded():
     result = PipelineResult(
         ok=False,
@@ -643,6 +690,7 @@ def test_main_ask_uses_pipeline(capsys):
         use_cache=None,
         cache_rows=None,
         use_parallel=False,
+        history=None,
     )
     out = capsys.readouterr().out
     assert "SELECT 1 AS n" in out
