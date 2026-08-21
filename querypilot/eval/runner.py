@@ -1,7 +1,9 @@
 """批量 Execution Match 评测与延迟基线（阶段三步骤 2）。
 
-每条用例：ask(question) → execute(gold_sql) → compare_results → TimingInfo
+每条用例：ask(question) 或 agentic.run(question) → execute(gold_sql) → compare_results → TimingInfo
 再汇总为 EvalReport（EX%、failed_ids、p50/p95）。
+
+默认 ``mode=fast`` 仍只调 ``ask()``；``mode=agent`` 走强 Agent 工具循环，不改 ``ask()`` 编排。
 """
 
 from __future__ import annotations
@@ -41,7 +43,7 @@ def percentile(values: Sequence[float], p: float) -> float | None:
     return ordered[rank - 1]
 
 
-def summarize(results: Sequence[CaseEvalResult]) -> EvalReport:
+def summarize(results: Sequence[CaseEvalResult], *, mode: str = "fast") -> EvalReport:
     """将逐条结果汇总为 EX%、延迟分位数与失败用例 id。"""
     total = len(results)
     matched_count = sum(1 for r in results if r.matched)
@@ -69,11 +71,58 @@ def summarize(results: Sequence[CaseEvalResult]) -> EvalReport:
         p50_ms=percentile(totals, 50) if totals else None,
         p95_ms=percentile(totals, 95) if totals else None,
         mean_ms=mean_ms,
+        mode=mode,
     )
 
 
 def _elapsed_ms(start: float) -> float:
     return (time.perf_counter() - start) * 1000.0
+
+
+_AGENT_FORWARD = ("include_values", "metadata", "memory", "max_turns")
+
+
+def _invoke_pipeline(
+    case: EvalCase,
+    *,
+    ask_fn: AskFn | None,
+    mode: str,
+    client: OpenAI | None,
+    con: duckdb.DuckDBPyConnection | None,
+    max_rows: int | None,
+    kwargs: dict[str, Any],
+) -> Any:
+    """Dispatch one case: injected ``ask_fn``, strong-agent, or default ``ask()``."""
+    if ask_fn is not None:
+        return ask_fn(case.question)
+    if mode == "agent":
+        from querypilot.agentic.memory import get_memory
+        from querypilot.agentic.run import run as agentic_run
+
+        sid = f"eval-{case.id}"
+        get_memory().reset(sid)
+        agent_kwargs: dict[str, Any] = {"session_id": sid}
+        if client is not None:
+            agent_kwargs["client"] = client
+        if con is not None:
+            agent_kwargs["con"] = con
+        if max_rows is not None:
+            agent_kwargs["max_rows"] = max_rows
+        for key in _AGENT_FORWARD:
+            if key in kwargs:
+                agent_kwargs[key] = kwargs[key]
+        return agentic_run(case.question, **agent_kwargs)
+
+    from querypilot.agent.pipeline import ask as default_ask
+
+    ask_kwargs = dict(kwargs)
+    if client is not None:
+        ask_kwargs["client"] = client
+    if con is not None:
+        ask_kwargs["con"] = con
+    if max_rows is not None:
+        ask_kwargs["max_rows"] = max_rows
+    return default_ask(case.question, **ask_kwargs)
 
 
 def run_case(
@@ -84,6 +133,7 @@ def run_case(
     client: OpenAI | None = None,
     con: duckdb.DuckDBPyConnection | None = None,
     max_rows: int | None = None,
+    mode: str = "fast",
     **kwargs: Any,
 ) -> CaseEvalResult:
     """评测一条金标用例：ask → execute(gold_sql) → EX 比对 → 计时。
@@ -92,9 +142,13 @@ def run_case(
 
     ``ask_fn`` / ``execute_fn`` 可覆盖默认实现（供测试）。单条失败时置 ``matched=False``
     并填写 ``error`` / ``stage``，不向外抛异常。
+    ``mode=agent`` 时调用 ``agentic.run``（独立 session），不走 ``ask()``。
     """
-    from querypilot.agent.pipeline import ask as default_ask
     from querypilot.db import execute as default_execute
+
+    planner = (mode or "fast").strip().lower()
+    if planner not in {"fast", "agent"}:
+        raise ValueError(f"unsupported eval mode: {mode}")
 
     t_all = time.perf_counter()
     ask_ms = 0.0
@@ -111,22 +165,20 @@ def run_case(
     matched = False
     score = 0.0
     match_reason = ""
+    extras: dict[str, Any] = {}
 
     # 执行ask操作
     t0 = time.perf_counter() # 开始计时
     try:
-        if ask_fn is not None:
-            pipe = ask_fn(case.question) # 使用自定义ask函数
-        else: 
-            # 使用默认ask函数，设置ask参数
-            ask_kwargs = dict(kwargs)
-            if client is not None:
-                ask_kwargs["client"] = client
-            if con is not None:
-                ask_kwargs["con"] = con
-            if max_rows is not None:
-                ask_kwargs["max_rows"] = max_rows
-            pipe = default_ask(case.question, **ask_kwargs) # 调用ask函数，获取管道结果
+        pipe = _invoke_pipeline(
+            case,
+            ask_fn=ask_fn,
+            mode=planner,
+            client=client,
+            con=con,
+            max_rows=max_rows,
+            kwargs=kwargs,
+        )
     except Exception as exc:  # 发生异常
         # noqa: BLE001 — per-case isolation 单条用例隔离，避免影响其他用例
         ask_ms = _elapsed_ms(t0)
@@ -136,6 +188,7 @@ def run_case(
     else:
         ask_ms = _elapsed_ms(t0) # 结束计时，计算ask耗时
         pred_sql = str(getattr(pipe, "sql", "") or "")
+        extras = dict(getattr(pipe, "extras", {}) or {})
         if getattr(pipe, "ok", False):
             # 正常返回且pipe.ok为True
             ask_ok = True # 设置ask成功标志
@@ -183,6 +236,7 @@ def run_case(
                 cache_hit=bool(getattr(stage_timing, "cache_hit", False)),
             ),
             stage=stage,
+            extras=extras,
         )
 
     # --- gold SQL ---
@@ -246,6 +300,7 @@ def run_case(
             cache_hit=bool(getattr(stage_timing, "cache_hit", False)), # 设置缓存命中标志
         ),
         stage=stage, # 设置stage
+        extras=extras,
     )
 
 
@@ -262,6 +317,7 @@ def run_eval(
     max_rows: int | None = None,
     save_path: Path | str | bool | None = None,
     max_workers: int | None = None,
+    mode: str = "fast",
     **kwargs: Any,
 ) -> EvalReport:
     """批量评测金标用例，返回汇总后的 EvalReport。
@@ -270,6 +326,8 @@ def run_eval(
     路径字符串/Path 则写到该位置；``None``/``False`` 不落盘。
 
     ``max_workers``：大于 1 时并发评测（每条用例自有 DuckDB 连接；此模式下忽略共享的 ``con``）。
+
+    ``mode``：``fast`` 走 ``ask()``；``agent`` 走 ``agentic.run``（每条用例独立 session）。
 
     未传入 ``cases`` 时的加载顺序：有 ``paths`` 则用它，否则用单个 ``path``
     （默认 ``data/Q&A.xlsx``）。使用默认 ask 时，``max_few_shots`` /
@@ -302,6 +360,7 @@ def run_eval(
             client=client,
             con=case_con,
             max_rows=max_rows,
+            mode=mode,
             **kwargs,
         )
 
@@ -315,7 +374,7 @@ def run_eval(
                 ordered[futs[fut]] = fut.result()
         results = [r for r in ordered if r is not None]
 
-    report = summarize(results) # 汇总结果
+    report = summarize(results, mode=mode) # 汇总结果
     if save_path:
         target = None if save_path is True else save_path # 保存路径
         save_eval_report(report, target)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -18,6 +18,8 @@ class AskRequest(BaseModel):
     max_rows: int = Field(default=1000, ge=1, le=100_000)
     use_parallel: bool = False
     history: list[HistoryTurn] = Field(default_factory=list)
+    mode: Literal["fast", "agent"] = "fast"
+    session_id: str = ""
 
 
 class ExportRequest(BaseModel):

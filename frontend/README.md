@@ -41,7 +41,7 @@ npm run dev
 
 **对话**
 
-1. 底部输入，Enter 发送（Shift+Enter 换行）；成功后保留多轮 `history`  
+1. 底部输入，Enter 发送（Shift+Enter 换行）；走强 Agent（`mode=agent` + `session_id`）  
 2. 助手侧：思考 / 自然语言 / SQL / 结果表（有表时正文不再重复表内数字）  
 3. 耗时、缓存、剪枝默认隐藏，点消息下「详情」展开；「新对话」清空线程  
 4. 无 mock 按钮  

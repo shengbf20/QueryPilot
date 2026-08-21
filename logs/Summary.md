@@ -22,7 +22,7 @@
   - ~~不明确指令 -> 新增交互版块~~ ✅ `ask(history=...)` / `stage=clarify`；CLI 可追问
   - 进一步扩展题库：泛化能力？稳定性？
 - 与 Agent 自更新/自进化深度结合：参考 logs-06
-- 吸收 Agent 优势，使项目更具有 Agent 特征的同时提升性能：参考 logs-07
+- 吸收 Agent 优势，使项目更具有 Agent 特征的同时提升性能：参考 logs-07（双路径进行中，见 `logs/10-双路径强Agent与快取数并行.md`）
 - 可持续运营，添加新表的元数据层支持：参考 logs-08
 - 测量并减少 token 使用量？（降低成本/开销）
 
@@ -66,6 +66,9 @@ python -m querypilot.cli eval --path "data/extra/Q&A_all.xlsx" --paths "data/ext
 
 # Extra3 安全评测（拒绝+警告 = 做对；不必关短路）
 python -m querypilot.cli eval --path "data/extra3/Q&A_all.xlsx" --output "logs/eval_reports/extra3_safety.json"
+
+# 强 Agent 官方金标（不走 ask()）
+python -m querypilot.cli eval --mode agent --path "data/Q&A.xlsx" --workers 4 --output "logs/eval_reports/eval_agent_gold.json"
 ```
 
 - API、问数页：`logs/05` 附录 A/B；对话模式：`frontend/README.md`
@@ -352,6 +355,7 @@ Schema 剪枝与围栏本身是毫秒～百毫秒级；端到端冷路径主要�
 | 缓存与延迟证据             | `logs/04-阶段四-…md`、`logs/04-phase4_perf.md` |
 | 原型 UI / API（附录 A/B） | `logs/05-阶段五-原型系统交付与验证.md`；对话模式见 `frontend/README.md` |
 | Extra3 安全评测           | `data/extra3/README.md`                          |
+| 双路径强 Agent            | `logs/10-双路径强Agent与快取数并行.md`             |
 | 消融实验与组件贡献分析        | `logs/09-阶段九-消融实验与改进总结.md`                 |
 
 

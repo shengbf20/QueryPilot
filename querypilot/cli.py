@@ -54,8 +54,25 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Do not prompt for follow-up when the model asks a clarifying question",
     )
+    ask_parser.add_argument(
+        "--mode",
+        choices=("fast", "agent"),
+        default="fast",
+        help="fast = existing ask() pipeline; agent = strong-agent tool loop",
+    )
+    ask_parser.add_argument(
+        "--session",
+        default="",
+        help="Session id for --mode agent (default: cli)",
+    )
 
     eval_parser = sub.add_parser("eval", help="Run Execution Match eval on gold Q&A cases")
+    eval_parser.add_argument(
+        "--mode",
+        choices=("fast", "agent"),
+        default="fast",
+        help="fast = ask() pipeline; agent = strong-agent tool loop",
+    )
     eval_parser.add_argument(
         "--limit",
         type=int,
@@ -252,6 +269,7 @@ def format_pipeline_result(result: PipelineResult, *, max_print_rows: int = 20) 
 def format_eval_report(report: EvalReport) -> str:
     """Pretty-print an EvalReport summary (CLI / demo_eval)."""
     lines: list[str] = [
+        f"mode={getattr(report, 'mode', 'fast')}  "
         f"EX: {report.matched_count}/{report.total} = {report.accuracy:.1%}  "
         f"failed={report.failed_ids}  "
         f"p50_ms={report.p50_ms}  p95_ms={report.p95_ms}"
@@ -284,10 +302,34 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "ask":
-        # 执行单次ask命令，直接调用ask函数
+        question = " ".join(args.question).strip()
+        allow_followup = (not args.no_followup) and sys.stdin.isatty()
+
+        if args.mode == "agent":
+            from querypilot.agentic import run as agentic_run
+
+            session_id = (args.session or "").strip() or "cli"
+            result = agentic_run(question, session_id=session_id, max_rows=args.max_rows)
+            print(format_pipeline_result(result, max_print_rows=args.max_rows))
+            while result.stage == "clarify" and allow_followup:
+                try:
+                    follow = input("追加说明（空行结束本轮）: ").strip()
+                except EOFError:
+                    break
+                if not follow:
+                    break
+                result = agentic_run(
+                    follow,
+                    session_id=session_id,
+                    max_rows=args.max_rows,
+                )
+                print(format_pipeline_result(result, max_print_rows=args.max_rows))
+            if result.stage == "clarify":
+                return 0
+            return 0 if result.ok else 1
+
         from querypilot.agent import ask
 
-        question = " ".join(args.question).strip()
         ask_kwargs = dict(
             max_rows=args.max_rows,
             max_few_shots=args.max_few_shots,
@@ -349,6 +391,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_few_shots=args.max_few_shots,
             allow_exact_few_shot=not args.no_exact_few_shot,
             max_workers=max(1, args.workers),
+            mode=args.mode,
         )
         print(format_eval_report(report))
         if not args.no_save:
@@ -531,6 +574,7 @@ def _report_from_dict(raw: dict) -> EvalReport:
         p50_ms=raw.get("p50_ms"),
         p95_ms=raw.get("p95_ms"),
         mean_ms=raw.get("mean_ms"),
+        mode=str(raw.get("mode") or "fast"),
     )
 
 

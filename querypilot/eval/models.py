@@ -84,6 +84,7 @@ class EvalReport:
     p50_ms: float | None = None
     p95_ms: float | None = None
     mean_ms: float | None = None
+    mode: str = "fast"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

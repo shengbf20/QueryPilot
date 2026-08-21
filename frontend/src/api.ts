@@ -25,11 +25,17 @@ async function readErrorMessage(resp: Response): Promise<string> {
 export async function postAsk(
   question: string,
   history: HistoryTurn[] = [],
+  opts: { mode?: "fast" | "agent"; sessionId?: string } = {},
 ): Promise<AskResponse> {
   const resp = await fetch("/api/ask", {
     method: "POST",
     headers: { "Content-Type": "application/json; charset=utf-8" },
-    body: JSON.stringify({ question, history }),
+    body: JSON.stringify({
+      question,
+      history,
+      mode: opts.mode ?? "fast",
+      session_id: opts.sessionId ?? "",
+    }),
   });
   if (!resp.ok) {
     throw new ApiError(await readErrorMessage(resp), resp.status);

@@ -98,10 +98,19 @@ function AssistantBody({
         <div className="chat-details">
           <div className="muted">
             {r.stage}
+            {r.extras?.mode === "agent" ? " · agent" : ""}
             {r.timing.cache_hit ? " · 缓存" : ""}
             {r.tables.length ? ` · ${r.tables.join(", ")}` : ""}
             {` · ${r.timing.total_ms.toFixed(0)} ms`}
           </div>
+          {Array.isArray(r.extras?.agent_trace) && r.extras.agent_trace.length ? (
+            <div className="muted" style={{ marginTop: "0.4rem" }}>
+              {(r.extras.agent_trace as { tool?: string }[])
+                .map((s) => s.tool)
+                .filter(Boolean)
+                .join(" → ")}
+            </div>
+          ) : null}
           <div className="timeline compact">
             {TIMING_STEPS.map(({ key, label }) => (
               <div className="timeline-item" key={key}>
@@ -128,6 +137,7 @@ export default function ChatMode({ seedQuestion, seedResult }: ChatModeProps) {
   const [error, setError] = useState("");
   const [openDetails, setOpenDetails] = useState<Record<string, boolean>>({});
   const skipSeed = useRef(false);
+  const sessionId = useRef(newId());
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -154,7 +164,10 @@ export default function ChatMode({ seedQuestion, seedResult }: ChatModeProps) {
     setLoading(true);
     setError("");
     try {
-      const data = await postAsk(q, toHistory(messages));
+      const data = await postAsk(q, toHistory(messages), {
+        mode: "agent",
+        sessionId: sessionId.current,
+      });
       setMessages([
         ...next,
         { id: newId(), role: "assistant", text: summarizeAsk(data), result: data },
@@ -189,6 +202,7 @@ export default function ChatMode({ seedQuestion, seedResult }: ChatModeProps) {
           className="secondary"
           onClick={() => {
             skipSeed.current = true;
+            sessionId.current = newId();
             setMessages([]);
             setError("");
             setOpenDetails({});

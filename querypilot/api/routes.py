@@ -25,13 +25,23 @@ def api_ask(body: AskRequest) -> JSONResponse:
     from querypilot.agent import ask
 
     history = [{"role": t.role, "content": t.content} for t in body.history]
-    result = ask(
-        body.question.strip(),
-        max_rows=body.max_rows,
-        use_cache=body.use_cache,
-        use_parallel=body.use_parallel,
-        history=history or None,
-    )
+    if body.mode == "agent":
+        from querypilot.agentic import run as agentic_run
+
+        result = agentic_run(
+            body.question.strip(),
+            session_id=body.session_id or None,
+            history=history or None,
+            max_rows=body.max_rows,
+        )
+    else:
+        result = ask(
+            body.question.strip(),
+            max_rows=body.max_rows,
+            use_cache=body.use_cache,
+            use_parallel=body.use_parallel,
+            history=history or None,
+        )
     payload = pipeline_result_to_api_dict(result, max_rows=body.max_rows)
     # Explicit charset helps Windows clients / proxies display Chinese correctly.
     return JSONResponse(

@@ -43,7 +43,7 @@ requires_qa = pytest.mark.skipif(
 )
 
 
-def _pipe(*, ok: bool, sql: str = "", columns=None, rows=None, message="", stage="done"):
+def _pipe(*, ok: bool, sql: str = "", columns=None, rows=None, message="", stage="done", extras=None):
     return SimpleNamespace(
         ok=ok,
         sql=sql,
@@ -51,6 +51,7 @@ def _pipe(*, ok: bool, sql: str = "", columns=None, rows=None, message="", stage
         rows=rows or [],
         message=message,
         stage=stage,
+        extras=extras or {},
     )
 
 
@@ -506,6 +507,46 @@ def test_run_eval_save_path_true_uses_default_report_dir(tmp_path, monkeypatch):
     assert loaded["total"] == 1
     assert loaded["failed_ids"] == []
     assert "saved_at" in loaded
+
+
+def test_run_eval_mode_agent_dispatches(monkeypatch):
+    seen: list[dict] = []
+
+    def _fake_agent(question, **kwargs):
+        seen.append({"question": question, **kwargs})
+        return _pipe(
+            ok=True,
+            sql="SELECT 1",
+            columns=["n"],
+            rows=[(1,)],
+            extras={"mode": "agent", "agent_trace": [{"tool": "run_sql"}]},
+        )
+
+    def _boom(*_a, **_k):
+        raise AssertionError("ask() must not run when eval mode=agent")
+
+    import importlib
+
+    agentic_run_mod = importlib.import_module("querypilot.agentic.run")
+    monkeypatch.setattr(agentic_run_mod, "run", _fake_agent)
+    monkeypatch.setattr("querypilot.agent.pipeline.ask", _boom)
+    cases = [
+        EvalCase(id="A1", question="q1", gold_sql="SELECT 1"),
+        EvalCase(id="A2", question="q2", gold_sql="SELECT 1"),
+    ]
+    report = run_eval(
+        cases=cases,
+        execute_fn=_exec(["n"], [(1,)]),
+        mode="agent",
+        max_few_shots=3,
+        allow_exact_few_shot=False,
+    )
+    assert report.mode == "agent"
+    assert report.matched_count == 2
+    assert [c["session_id"] for c in seen] == ["eval-A1", "eval-A2"]
+    assert "max_few_shots" not in seen[0]
+    assert report.results[0].extras.get("mode") == "agent"
+    assert report.results[0].extras.get("agent_trace")
 
 
 # ---------------------------------------------------------------------------

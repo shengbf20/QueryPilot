@@ -6,17 +6,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 QueryPilot is an AI-native natural-language-to-SQL agent for customer marketing scenarios (NJU competition project). Users ask questions in Chinese; the system may refuse malicious intent, prune schema, generate SQL via a single LLM call (or return `stage=clarify` if the ask is underspecified), validates it through a dual-layer safety fence, and executes against a local DuckDB database.
 
-**Architecture**: Metadata Engine (YAML knowledge) → Agent Pipeline (intent → prune → generate / clarify → L1/L2 → execute) → Eval (Execution Match; Extra3 = refuse + warning).
+**Architecture**: Metadata Engine (YAML knowledge) → Agent Pipeline (intent → prune → generate / clarify → L1/L2 → execute) → Eval (Execution Match; Extra3 = refuse + warning). Parallel **strong-agent** path: `querypilot.agentic.run` (tool loop + session memory). Do not fold agentic orchestration into `ask()`.
 
 ## Key Commands
 
 ```bash
-# Ask a question (main entry point)
+# Ask a question (main entry point; fast pipeline)
 querypilot ask "有多少年龄大于30岁的女性客户？"
-# or: python -m querypilot.cli ask "..."
+# Strong-agent tool loop (chat UI / --mode agent)
+querypilot ask --mode agent "帮我看看客户情况"
 
 # Batch eval against gold-standard Q&A
 querypilot eval --path "data/Q&A.xlsx" --output logs/eval_reports/out.json
+# Strong-agent gold eval (does not call ask())
+querypilot eval --mode agent --path "data/Q&A.xlsx" --workers 4 --output logs/eval_reports/eval_agent_gold.json
 
 # Run eval on Extra sets (generalization), fs=3 or fs=0
 python -m querypilot.cli eval --path "data/extra/Q&A_all.xlsx" --paths "data/extra2/Q&A_all.xlsx" --no-exact-few-shot --max-few-shots 3 --workers 4 --output logs/eval_reports/out.json
@@ -57,6 +60,7 @@ python scripts/import_data.py
 | Directory | Purpose |
 |-----------|---------|
 | `querypilot/agent/` | Core pipeline (`pipeline.py` → `ask()`), prompt assembly, SQL generation, deterministic fixes (`topn_fix.py`, `pnl_fix.py`) |
+| `querypilot/agentic/` | Strong-agent runtime (`run()`): budgeted tools + session memory; does not call `ask()` |
 | `querypilot/metadata_engine/` | YAML loading, schema pruning, join-graph, metrics, value descriptors |
 | `querypilot/safety/` | Intent guard (`intent_guard.py`), L1 AST (`l1_ast.py`), L2 EXPLAIN (`l2_explain.py`), result probe |
 | `querypilot/eval/` | Execution Match, Extra3 safety match (`safety_match.py`), eval runner, eval-agent, dataset loading |

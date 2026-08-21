@@ -182,6 +182,7 @@ def test_build_parser_eval_defaults():
     assert args.no_llm_diagnose is False
     assert args.review is False
     assert args.review_output is None
+    assert args.mode == "fast"
 
 
 def test_build_parser_eval_options():
@@ -308,11 +309,21 @@ def test_main_eval_uses_run_eval(capsys, tmp_path: Path):
         max_few_shots=1,
         allow_exact_few_shot=True,
         max_workers=1,
+        mode="fast",
     )
     printed = capsys.readouterr().out
     assert "EX: 1/1 = 100.0%" in printed
     assert "report saved:" in printed
     assert out.exists()
+
+
+def test_main_eval_mode_agent_forwards():
+    report = EvalReport(total=0, matched_count=0, accuracy=0.0, results=[], failed_ids=[], mode="agent")
+    with patch("querypilot.eval.run_eval", return_value=report) as mocked:
+        code = main(["eval", "--mode", "agent", "--no-save"])
+    assert code == 0
+    mocked.assert_called_once()
+    assert mocked.call_args.kwargs["mode"] == "agent"
 
 
 def test_main_eval_no_save(capsys, tmp_path: Path):
