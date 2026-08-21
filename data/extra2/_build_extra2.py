@@ -477,7 +477,7 @@ SELECT
   coalesce(fin.aset_in, 0) AS aset_in,
   coalesce(fin.aset_out, 0) AS aset_out,
   coalesce(aset_end.nm_tot_aset, 0) + coalesce(aset_end.fc_pur_aset, 0)
-    - coalesce(aset_bgn.nm_tot_aset, 0) + coalesce(aset_bgn.fc_pur_aset, 0)
+    - (coalesce(aset_bgn.nm_tot_aset, 0) + coalesce(aset_bgn.fc_pur_aset, 0))
     + coalesce(fin.aset_out, 0) - coalesce(fin.aset_in, 0) AS aset_pft
 FROM prdtinfo AS q
 LEFT JOIN dws_cust_aset_d AS aset_end

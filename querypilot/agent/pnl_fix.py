@@ -1,7 +1,8 @@
 """Deterministic period-PnL SQL normalization (no LLM).
 
-Aligns intuitive ``end_aset - bgn_aset + out - in`` with the gold/quirk formula
-``end_nm+end_fc - bgn_nm + bgn_fc + out - in`` when CTEs pre-sum nm+fc.
+Rewrites ``end_aset - bgn_aset + out - in`` and the unparenthesized quirk
+``end_nm+end_fc - bgn_nm + bgn_fc + out - in`` to
+``end_nm+end_fc - (bgn_nm+bgn_fc) + out - in``.
 """
 
 from __future__ import annotations
@@ -25,12 +26,9 @@ def _nm_plus_fc(table: str | None) -> exp.Expression:
 
 
 def _gold_aset_pft(end_alias: str, bgn_alias: str, flow_alias: str | None) -> exp.Expression:
-    """end_nm+end_fc - bgn_nm + bgn_fc + out - in."""
-    end_total = _nm_plus_fc(end_alias)
-    body = exp.Add(
-        this=exp.Sub(this=end_total, expression=_coalesce_col(bgn_alias, "nm_tot_aset")),
-        expression=_coalesce_col(bgn_alias, "fc_pur_aset"),
-    )
+    """end_nm+end_fc - bgn_nm - bgn_fc + out - in (equivalent to minus grouped bgn)."""
+    body = exp.Sub(this=_nm_plus_fc(end_alias), expression=_coalesce_col(bgn_alias, "nm_tot_aset"))
+    body = exp.Sub(this=body, expression=_coalesce_col(bgn_alias, "fc_pur_aset"))
     if flow_alias:
         body = exp.Add(this=body, expression=_coalesce_col(flow_alias, "aset_out"))
         body = exp.Sub(this=body, expression=_coalesce_col(flow_alias, "aset_in"))
@@ -73,16 +71,31 @@ def _expand_asset_cte(cte: exp.CTE) -> bool:
     return changed
 
 
-def _outer_alias_for_cte(select: exp.Select, cte_name: str) -> str | None:
-    from_ = select.args.get("from_")
+def _iter_table_sources(select: exp.Select) -> list[exp.Expression]:
     sources: list[exp.Expression] = []
+    from_ = select.args.get("from_")
     if from_ is not None and from_.this is not None:
         sources.append(from_.this)
     for join in select.args.get("joins") or []:
         if join.this is not None:
             sources.append(join.this)
-    for src in sources:
+    return sources
+
+
+def _outer_alias_for_cte(select: exp.Select, cte_name: str) -> str | None:
+    for src in _iter_table_sources(select):
         if isinstance(src, exp.Table) and src.name == cte_name:
+            return src.alias_or_name or src.name
+    return None
+
+
+def _alias_by_join_name(select: exp.Select, names: set[str]) -> str | None:
+    wanted = {n.lower() for n in names}
+    for src in _iter_table_sources(select):
+        if not isinstance(src, exp.Table):
+            continue
+        alias = (src.alias_or_name or src.name or "").lower()
+        if alias in wanted:
             return src.alias_or_name or src.name
     return None
 
@@ -121,24 +134,45 @@ def _find_flow_alias(select: exp.Select) -> str | None:
     return None
 
 
-def _intuitive_pnl(expr: exp.Expression) -> bool:
-    """True if aset_pft looks like end_total - bgn_total + out - in (not gold quirk)."""
-    text = expr.sql(dialect=_DIALECT).lower()
-    if "nm_tot_aset" in text and re.search(
-        r"-\s*coalesce\([^)]*nm_tot_aset", text.replace("\n", " ")
+def _compact_sql(expr: exp.Expression) -> str:
+    return re.sub(r"\s+", "", expr.sql(dialect=_DIALECT).lower())
+
+
+def _already_grouped_bgn(expr: exp.Expression) -> bool:
+    compact = _compact_sql(expr)
+    if re.search(
+        r"-\(coalesce\([^)]*nm_tot_aset[^)]*\)\+coalesce\([^)]*fc_pur_aset",
+        compact,
     ):
-        # Already has -bgn_nm ... +bgn_fc shape
-        if re.search(r"\+\s*coalesce\([^)]*fc_pur_aset", text.replace("\n", " ")):
-            return False
-    compact = re.sub(r"\s+", "", text)
-    has_end = "end_aset" in compact
-    has_bgn = "bgn_aset" in compact
-    if has_end and has_bgn and "-" in compact:
         return True
-    # end/bgn as bare summed aliases without nm/fc split
-    if has_end and has_bgn:
+    if re.search(
+        r"-coalesce\([^)]*nm_tot_aset[^)]*\)-coalesce\([^)]*fc_pur_aset",
+        compact,
+    ):
         return True
     return False
+
+
+def _quirk_plus_bgn_fc(expr: exp.Expression) -> bool:
+    compact = _compact_sql(expr)
+    return bool(
+        re.search(
+            r"-coalesce\([^)]*nm_tot_aset[^)]*\)\+coalesce\([^)]*fc_pur_aset",
+            compact,
+        )
+    )
+
+
+def _intuitive_pnl(expr: exp.Expression) -> bool:
+    """True if aset_pft should be rewritten to grouped beginning assets."""
+    if _already_grouped_bgn(expr):
+        return False
+    if _quirk_plus_bgn_fc(expr):
+        return True
+    compact = _compact_sql(expr)
+    has_end = "end_aset" in compact
+    has_bgn = "bgn_aset" in compact
+    return bool(has_end and has_bgn)
 
 
 def _cte_projects_nm_fc(cte: exp.CTE) -> bool:
@@ -174,7 +208,7 @@ def _outer_aliases_for_nm_fc_ctes(select: exp.Select, with_: exp.With) -> tuple[
 
 
 def fix_period_pnl_sql(sql: str) -> str:
-    """Rewrite intuitive period-PnL SQL toward gold ``aset_pft`` quirk. No-op if N/A."""
+    """Rewrite period-PnL SQL toward grouped ``aset_pft``. No-op if N/A."""
     if not sql or "aset_pft" not in sql.lower():
         return sql
     try:
@@ -202,6 +236,9 @@ def fix_period_pnl_sql(sql: str) -> str:
         alt_bgn, alt_end = _outer_aliases_for_nm_fc_ctes(tree, with_)
         bgn_alias = bgn_alias or alt_bgn
         end_alias = end_alias or alt_end
+    if not bgn_alias or not end_alias:
+        bgn_alias = bgn_alias or _alias_by_join_name(tree, {"aset_bgn", "bgn_aset"})
+        end_alias = end_alias or _alias_by_join_name(tree, {"aset_end", "end_aset"})
     if not (bgn_alias and end_alias):
         return sql if not expanded else tree.sql(dialect=_DIALECT)
 

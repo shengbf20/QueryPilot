@@ -138,7 +138,7 @@ examples:
       GROUP BY c.up_org_name, c.org_name
 
   - question: 钻石卡男性客户，年龄大于40岁，持有比亚迪市值超过1000元，他在26年Q1的盈亏情况
-    rationale: 无独立盈亏表。筛钻石卡男客户+比亚迪持仓后，输出6列 pty_id/bgn_aset/end_aset/aset_in/aset_out/aset_pft；期初资产日20260101、期末20260331；流入流出对 dws_cust_fin_d 的 cash/tran/assign 求和；aset_pft 与金标表达式一致。别名全局唯一，避免 CTE/外层复用同一别名。
+    rationale: 无独立盈亏表。筛钻石卡男客户+比亚迪持仓后，输出6列 pty_id/bgn_aset/end_aset/aset_in/aset_out/aset_pft；期初资产日20260101、期末20260331；流入流出对 dws_cust_fin_d 的 cash/tran/assign 求和；aset_pft = 期末(nm+fc) - (期初nm+期初fc) + 流出 - 流入，期初两项加括号。别名全局唯一，避免 CTE/外层复用同一别名。
     sql: |
       WITH custinfo AS (
         SELECT pty_id
@@ -164,7 +164,7 @@ examples:
         coalesce(fin.aset_in, 0) AS aset_in,
         coalesce(fin.aset_out, 0) AS aset_out,
         coalesce(aset_end.nm_tot_aset, 0) + coalesce(aset_end.fc_pur_aset, 0)
-          - coalesce(aset_bgn.nm_tot_aset, 0) + coalesce(aset_bgn.fc_pur_aset, 0)
+          - (coalesce(aset_bgn.nm_tot_aset, 0) + coalesce(aset_bgn.fc_pur_aset, 0))
           + coalesce(fin.aset_out, 0) - coalesce(fin.aset_in, 0) AS aset_pft
       FROM prdtinfo AS q
       LEFT JOIN dws_cust_aset_d AS aset_end

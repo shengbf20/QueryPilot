@@ -58,9 +58,9 @@ metrics:
     name: 期间盈亏
     kind: derived
     tables: [dws_cust_aset_d, dws_cust_fin_d, dwd_cust_hold_d, dim_product]
-    formula: "aset_pft = end_nm+end_fc - bgn_nm + bgn_fc + aset_out - aset_in"
+    formula: "aset_pft = end_nm+end_fc - (bgn_nm + bgn_fc) + aset_out - aset_in"
     description: >
       无独立盈亏/pnl表。26年Q1：期末资产 data_dt='20260331'，期初用 '20260101'；
       aset_in=sum(cash_in+tran_in+assign_in)，aset_out=sum(cash_out+tran_out+assign_out)，窗口 20260101–20260331；
       必须输出六列 pty_id,bgn_aset,end_aset,aset_in,aset_out,aset_pft（bgn/end 为 nm_tot_aset+fc_pur_aset）；
-      禁止直觉式 end_aset - bgn_aset + out - in；期初 fc 在 aset_pft 中为加号；六列外层 coalesce(...,0)。
+      期初 nm+fc 必须加括号一起减；禁止写成 -bgn_nm + bgn_fc；六列外层 coalesce(...,0)。

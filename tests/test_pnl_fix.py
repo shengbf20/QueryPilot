@@ -2,7 +2,19 @@
 
 from __future__ import annotations
 
+import re
+
 from querypilot.agent.pnl_fix import fix_period_pnl_sql
+
+
+def _has_quirk_plus_fc(sql: str) -> bool:
+    compact = re.sub(r"\s+", "", sql.lower())
+    return bool(
+        re.search(
+            r"(?<!\()-coalesce\([^)]*nm_tot_aset[^)]*\)\+coalesce\([^)]*fc_pur_aset",
+            compact,
+        )
+    )
 
 
 def test_expands_intuitive_end_minus_bgn_formula():
@@ -44,9 +56,8 @@ def test_expands_intuitive_end_minus_bgn_formula():
     assert "asbgn_aset" in low or "as bgn_aset" in out.lower()
     assert "nm_tot_aset" in low
     assert "fc_pur_aset" in low
-    # Quirk: minus bgn nm then plus bgn fc (not minus whole bgn_aset)
     assert "-coalesce(b.nm_tot_aset" in low or "-coalesce(b.\"nm_tot_aset\"" in low
-    assert "+coalesce(b.fc_pur_aset" in low or "+coalesce(b.\"fc_pur_aset\"" in low
+    assert "-coalesce(b.fc_pur_aset" in low or "-coalesce(b.\"fc_pur_aset\"" in low
     assert "end_aset-bgn_aset" not in low
     assert "e.end_aset" not in out.lower() or "end_aset as (" in out.lower()
 
@@ -66,7 +77,7 @@ def test_noop_already_gold_style_direct_joins():
       coalesce(fin.aset_in, 0) AS aset_in,
       coalesce(fin.aset_out, 0) AS aset_out,
       coalesce(aset_end.nm_tot_aset, 0) + coalesce(aset_end.fc_pur_aset, 0)
-        - coalesce(aset_bgn.nm_tot_aset, 0) + coalesce(aset_bgn.fc_pur_aset, 0)
+        - (coalesce(aset_bgn.nm_tot_aset, 0) + coalesce(aset_bgn.fc_pur_aset, 0))
         + coalesce(fin.aset_out, 0) - coalesce(fin.aset_in, 0) AS aset_pft
     FROM prdtinfo AS q
     LEFT JOIN dws_cust_aset_d AS aset_end
@@ -79,11 +90,8 @@ def test_noop_already_gold_style_direct_joins():
     ) AS fin ON q.pty_id = fin.pty_id
     """
     out = fix_period_pnl_sql(sql)
-    # Should recognize gold shape and leave formula intact (or equivalent)
     assert "aset_pft" in out.lower()
-    assert "- coalesce(aset_bgn.nm_tot_aset" in out.lower().replace("\n", " ") or (
-        "-coalesce(aset_bgn.nm_tot_aset" in out.lower().replace(" ", "")
-    )
+    assert not _has_quirk_plus_fc(out)
 
 
 def test_rewrites_outer_bgn_end_when_cte_already_has_nm_fc():
@@ -120,3 +128,29 @@ def test_rewrites_outer_bgn_end_when_cte_already_has_nm_fc():
     assert "e.end_aset" not in out.lower() or "as end_aset" in out.lower()
     assert "nm_tot_aset" in low and "fc_pur_aset" in low
     assert "-coalesce(b.nm_tot_aset" in low or "-coalesce(b.\"nm_tot_aset\"" in low
+    assert "-coalesce(b.fc_pur_aset" in low or "-coalesce(b.\"fc_pur_aset\"" in low
+
+
+def test_rewrites_quirk_plus_fc_to_grouped_bgn():
+    sql = """
+    WITH prdtinfo AS (SELECT pty_id FROM dwd_cust_hold_d)
+    SELECT
+      q.pty_id,
+      coalesce(aset_end.nm_tot_aset, 0) + coalesce(aset_end.fc_pur_aset, 0)
+        - coalesce(aset_bgn.nm_tot_aset, 0) + coalesce(aset_bgn.fc_pur_aset, 0)
+        + coalesce(fin.aset_out, 0) - coalesce(fin.aset_in, 0) AS aset_pft
+    FROM prdtinfo AS q
+    LEFT JOIN dws_cust_aset_d AS aset_end
+      ON q.pty_id = aset_end.pty_id AND aset_end.data_dt = '20260331'
+    LEFT JOIN dws_cust_aset_d AS aset_bgn
+      ON q.pty_id = aset_bgn.pty_id AND aset_bgn.data_dt = '20260101'
+    LEFT JOIN (
+      SELECT pty_id, SUM(cash_in) AS aset_in, SUM(cash_out) AS aset_out
+      FROM dws_cust_fin_d GROUP BY pty_id
+    ) AS fin ON q.pty_id = fin.pty_id
+    """
+    out = fix_period_pnl_sql(sql)
+    compact = re.sub(r"\s+", "", out.lower())
+    assert "-coalesce(aset_bgn.nm_tot_aset" in compact
+    assert "-coalesce(aset_bgn.fc_pur_aset" in compact
+    assert not _has_quirk_plus_fc(out)
