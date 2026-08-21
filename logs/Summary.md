@@ -18,18 +18,36 @@
 ## TBD
 
 - 扩展题库并评测：
-  - 恶意指令 -> safety部分
-  - 不明确指令 -> 新增交互版块
-  - 泛化能力？稳定性？
+  - ~~恶意指令 -> safety部分~~ ✅ Extra3（拒绝+警告算对），见 `data/extra3/README.md`
+  - ~~不明确指令 -> 新增交互版块~~ ✅ `ask(history=...)` / `stage=clarify`；CLI 可追问
+  - 进一步扩展题库：泛化能力？稳定性？
 - 与 Agent 自更新/自进化深度结合：参考 logs-06
+- 吸收 Agent 优势，使项目更具有 Agent 特征的同时提升性能：参考 logs-07
+- 可持续运营，添加新表的元数据层支持：参考 logs-08
 - 测量并减少 token 使用量？（降低成本/开销）
+
+
+
+### TBD-Waitlist
+
 - ~~Ablation Study？确定这种设计的必要性/有效性？（e.g. L1 和 L2 围栏）~~ ✅ 已完成，见 `logs/09-阶段九-消融实验与改进总结.md`
 - 打磨前端：
-  - API
-  - Chat UI
+  - ~~API~~
+  - ~~Chat UI~~ ✅ 问数 / 对话双模式，见 `frontend/README.md`
 - 文案：
   - 使用手册（eval评测平台如何使用、前端如何使用）
   - 实验报告（书写思路见 “说明目标”）
+
+### New Options
+
+> 解读代码时发现的可选优化方向，均为非阻塞改进，按优先级粗略排序。
+
+- `bundle.py` **惰性导入校验模块**：模块级 import `metadata_validator` 使整条校验链随进程启动加载，而 ask 热路径用不到；移入 `MetadataBundle.validate()` 内可省启动开销。
+- `db/` **连接复用**：`get_connection` 每次新建只读连接，单进程高频 ask 可复用同一连接（eval 并发模式仍应各自开连接）。
+- `llm/` **增加重试与超时封装**：LLM 调用失败目前直接上抛，仅靠 pipeline 的 try/except 降级；可加指数退避重试与超时，提升稳定性。
+- **CLI 补充** `bench` **子命令**：文档（CLAUDE.md）提到 `querypilot bench`，实际入口只有 `scripts/bench_pipeline.py`，可对齐或改文档。
+- **构建类脚本归位**：`data/extra`* 下的 `_build_*.py` 等一次性脚本与「data/ 只读」约定略冲突，可移入 `scripts/` 并规范命名（保留溯源价值，不建议删除）。
+- **前端参数可配置化**：前端调 `/api/ask` 只透传 3 个参数、全走默认路径，与 eval 的可调参数（few-shot、缓存开关）不对齐；可考虑在 UI 或 API 暴露更多开关。
 
 ---
 
@@ -45,9 +63,12 @@ python -m querypilot.cli eval --path "data/extra/Q&A_all.xlsx" --paths "data/ext
 
 # fs=0
 python -m querypilot.cli eval --path "data/extra/Q&A_all.xlsx" --paths "data/extra2/Q&A_all.xlsx" --no-exact-few-shot --max-few-shots 0 --workers 4 --output "logs/eval_reports/extra76_fast_B_fs0.json"
+
+# Extra3 安全评测（拒绝+警告 = 做对；不必关短路）
+python -m querypilot.cli eval --path "data/extra3/Q&A_all.xlsx" --output "logs/eval_reports/extra3_safety.json"
 ```
 
-- API、Chat UI使用说明见logs-05附录A/B
+- API、问数页：`logs/05` 附录 A/B；对话模式：`frontend/README.md`
 
 ---
 
@@ -180,14 +201,15 @@ Schema 剪枝与围栏本身是毫秒～百毫秒级；端到端冷路径主要�
 一次正常问数大致走：
 
 ```
-自然语言
-  → [元数据] 加载 + Schema 剪枝（+ Join 补全）
-  → [Agent] 单次 LLM 生成 SQL
+自然语言（可选 history）
+  → [Safety] 意图围栏：恶意指令直接 stage=safety，不剪枝、不调 LLM
+  → [元数据] 加载 + Schema 剪枝（+ Join 补全；有 history 时拼上用户补充）
+  → [Agent] 单次 LLM 生成 SQL；需求不清则 stage=clarify、空 SQL（CLI/对话可追问）
   → [Safety，挂在 Agent 流水线内] L1 AST → L2 EXPLAIN → 执行 / 1-Shot 纠错
   → 结果表（可选结果探针提示）
 ```
 
-评测则在金标集上批量调用同一条 `ask()` 路径，用 EX 对比 Agent 结果与金标 SQL 结果。
+评测则在金标集上批量调用同一条 `ask()` 路径：普通题用 EX 对比结果集；Extra3 用「拒绝 + 安全警告」。
 
 ---
 
@@ -204,6 +226,8 @@ Schema 剪枝与围栏本身是毫秒～百毫秒级；端到端冷路径主要�
 | ----------- | ------------------------------------------------------------ |
 | Schema 剪枝编排 | 调用元数据引擎，只把相关表/列/指标送进 Prompt                                  |
 | 单次 SQL 生成   | 组装规则 + Few-Shot + 口径，要求复杂逻辑用 CTE，输出结构化 JSON                  |
+| 意图围栏        | 问句级拦截删库/改数/越权/越狱等；命中则 `stage=safety`，不进剪枝与生成           |
+| 澄清 / 多轮     | 需求不清时 `clarify` 追问（`ok=True`、空 SQL）；`history` 注入后续一轮（有 history 时不走问句缓存 / exact 短路） |
 | 双层安全围栏      | L1：sqlglot 静态拦写操作/越权表、修正列名幻觉；L2：`EXPLAIN` 试跑，失败则 **仅 1 次**纠错 |
 | 结果探针        | 空结果或明显异常时给出交互提示                                              |
 | 性能扩展        | 分阶段计时；查询/元数据缓存；可选多指标并行拆解（默认路径可不启用）                           |
@@ -215,7 +239,7 @@ Schema 剪枝与围栏本身是毫秒～百毫秒级；端到端冷路径主要�
 | 路径                   | 职责                                                 |
 | -------------------- | -------------------------------------------------- |
 | `querypilot/agent/`  | 主编排 `pipeline.py`（`ask()`）、Prompt、SQL 生成、部分确定性口径修复 |
-| `querypilot/safety/` | L1 AST、L2 EXPLAIN、结果探针（逻辑上属于 Agent 流水线的「护栏层」）      |
+| `querypilot/safety/` | 意图围栏、L1 AST、L2 EXPLAIN、结果探针（逻辑上属于 Agent 流水线的「护栏层」） |
 | `querypilot/cache/`  | 阶段四：问数缓存、元数据缓存等                                    |
 | `querypilot/llm/`    | DeepSeek 等 LLM 客户端                                 |
 | `querypilot/db/`     | DuckDB 只读连接、`execute` / `explain`                  |
@@ -275,6 +299,7 @@ Schema 剪枝与围栏本身是毫秒～百毫秒级；端到端冷路径主要�
 | -------------------- | --------------------------------------------------- |
 | 金标加载                 | 读取 `data/Q&A.xlsx` 等问答对，统一为 `question` / `gold_sql` |
 | Execution Match (EX) | 执行 Agent SQL 与金标 SQL，比对结果集（对齐键、容差等）                 |
+| 安全拒绝匹配             | Extra3：`eval_mode=safety_refuse`，金标 `SAFETY_REFUSE`；拒绝且带安全警告即算对（不跑金标 SQL） |
 | Eval-Agent 归因        | EX 失败时输出错误类型与 Markdown 诊断，降低人工逐题排查成本                |
 | 人机复核分流               | 高分自动过 / 模糊人工核 / 低分进 Bad Case；确认后回流 Few-Shot         |
 | 延迟与压测配套              | 评测报告带耗时；阶段四另有冷/热路径压测报告                              |
@@ -288,7 +313,7 @@ Schema 剪枝与围栏本身是毫秒～百毫秒级；端到端冷路径主要�
 | `querypilot/eval/`                        | 数据集、EX 比对、批量 runner、Eval-Agent、复核回流接口 |
 | `scripts/baseline_eval.py` 等              | 一键基线 / Extra 复跑                       |
 | `logs/eval_reports/`、`logs/perf_reports/` | 评测与压测产物（证据材料）                         |
-| `data/Q&A.xlsx`、`data/extra*`             | 金标与泛化评测集（只读加载）                        |
+| `data/Q&A.xlsx`、`data/extra*`、`data/extra3/` | 金标、泛化 Extra、恶意指令 Extra3（只读加载）      |
 
 
 **对应阶段**：阶段三主线；续一/续二与阶段四续篇用同一套尺子做提准与泛化验证；阶段五盲测复跑复用报告叙事。
@@ -325,7 +350,8 @@ Schema 剪枝与围栏本身是毫秒～百毫秒级；端到端冷路径主要�
 | 金标从 14%→100% 的迭代    | `logs/03-阶段三续一-…md`                        |
 | 泛化集与关短路评测           | `logs/03-阶段三续二-…md`、`logs/04-阶段四续一-…md`    |
 | 缓存与延迟证据             | `logs/04-阶段四-…md`、`logs/04-phase4_perf.md` |
-| 原型 UI / API（附录 A/B） | `logs/05-阶段五-原型系统交付与验证.md`                 |
+| 原型 UI / API（附录 A/B） | `logs/05-阶段五-原型系统交付与验证.md`；对话模式见 `frontend/README.md` |
+| Extra3 安全评测           | `data/extra3/README.md`                          |
 | 消融实验与组件贡献分析        | `logs/09-阶段九-消融实验与改进总结.md`                 |
 
 
