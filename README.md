@@ -60,16 +60,16 @@
 
 ## 二、 高性能 Agent 执行工作流架构
 
-为解决传统 Agent “工具调用耗时长”与“复杂查询依赖多轮交互”的瓶颈，系统采用**单次 LLM 主驱动 + 代码级预处理/后校验**的工作流。端到端入口为 `querypilot.agent.pipeline.ask()`（CLI `querypilot ask` / HTTP `POST /api/ask`），**一次自然语言输入对应一次** `PipelineResult` **输出**。
+为解决传统 Agent “工具调用耗时长”与“复杂查询依赖多轮交互”的瓶颈，系统采用**单次 LLM 主驱动 + 代码级预处理/后校验**的工作流。端到端入口为 `querypilot.agent.pipeline.ask()`（CLI `querypilot ask` / HTTP `POST /api/ask`），**一次调用对应一次** `PipelineResult` **输出**（澄清后的追问是下一次调用，经 `history` 衔接）。
 
 ### 输入 → 输出契约
 
 
 | 方向             | 内容                                                                                                                                        |
 | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| **Input**      | 中文自然语言问题 `question`；可选参数如 `max_rows`、`max_few_shots`、`use_cache`、`use_parallel`                                                           |
-| **Output（成功）** | `ok=True`：`sql`、`rationale`、剪枝命中的 `tables`、`columns` + `rows`（表格数据）、各阶段 `timing`；若结果为空/异常可能附带 `probe_message` 与放宽条件建议（不阻断成功）              |
-| **Output（失败）** | `ok=False`、`degraded=True`：停在失败阶段 `stage`（`prune` / `generate` / `l1` / `l2` / `execute`），`message` 说明原因；已生成的 `sql` / `rationale` 尽量保留供排查 |
+| **Input**      | 中文自然语言问题 `question`；可选 `history`（`[{role, content}]`，澄清/多轮）；以及 `max_rows`、`max_few_shots`、`use_cache`、`use_parallel` 等                           |
+| **Output（成功）** | `ok=True`：通常含 `sql`、`rationale`、剪枝命中的 `tables`、`columns` + `rows`、各阶段 `timing`；若结果为空/异常可能附带 `probe_message`（不阻断成功）。`stage=clarify` 时 `sql` 为空，`message` 为追问 |
+| **Output（失败）** | `ok=False`、`degraded=True`：停在失败阶段 `stage`（`safety` / `prune` / `generate` / `l1` / `l2` / `execute`），`message` 说明原因；已生成的 `sql` / `rationale` 尽量保留供排查 |
 
 
 
@@ -87,6 +87,11 @@
 └────────────────────────────┬────────────────────────────────┘
                              ▼
 ┌─────────────────────────────────────────────────────────────┐
+│ 0b. 意图围栏  check_malicious_intent（问句 + 拼接后的 history）│
+│     命中 → stage=safety，不剪枝、不调 LLM                      │
+└────────────────────────────┬────────────────────────────────┘
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
 │ 1. Schema 剪枝  prune_schema / get_pruned_schema             │
 │    问句扩展 → BM25 关联表/列/指标 → 领域 cue 补种子表          │
 │    → Join-Graph 补全多表路径 → 输出剪枝 Schema 文本供 Prompt   │
@@ -96,7 +101,8 @@
 │ 2. SQL 生成  generate_sql                                     │
 │    ├─（可选）Few-Shot 问句完全匹配 → 直接返回已知 SQL，不调 LLM │
 │    └─ 否则：组装 Prompt → DeepSeek 单次 JSON 输出            │
-│       { sql, rationale, uses_cte }（复杂查询鼓励 WITH CTE）   │
+│       { sql, rationale, uses_cte, clarify? }               │
+│       clarify 非空且 sql 为空 → stage=clarify，ok=True，停   │
 └────────────────────────────┬────────────────────────────────┘
                              ▼
 ┌─────────────────────────────────────────────────────────────┐
@@ -136,15 +142,15 @@
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**实现锚点**：`querypilot/agent/pipeline.py`（编排）、`sql_generator.py`（生成）、`safety/l1_ast.py` + `l2_explain.py`（围栏）、`safety/result_probe.py`（探针）、`cache/query_cache.py`（问句级缓存）。
+**实现锚点**：`querypilot/agent/pipeline.py`（编排）、`sql_generator.py`（生成）、`safety/intent_guard.py`（意图围栏）、`safety/l1_ast.py` + `l2_explain.py`（围栏）、`safety/result_probe.py`（探针）、`cache/query_cache.py`（问句级缓存）。
 
 ### 快捷分支（在步骤 0 之前或替代部分主路径）
 
 
 | 分支                 | 触发条件                                          | 行为                                                                               |
 | ------------------ | --------------------------------------------- | -------------------------------------------------------------------------------- |
-| **Query Cache 命中** | 相同问句 + 参数组合的缓存存在                              | 跳过剪枝/生成/围栏；直接回放已验 SQL；若缓存含结果行则毫秒级返回，否则重执行 + 探针                                   |
-| **Few-Shot 精确短路**  | `allow_exact_few_shot=True` 且 HITL 回流样例问句完全一致 | 在步骤 2 内直接返回样例 SQL，不调用 LLM（评测泛化时可 `--no-exact-few-shot` 关闭）                       |
+| **Query Cache 命中** | 相同问句 + 参数组合的缓存存在；**无** `history`            | 跳过剪枝/生成/围栏；直接回放已验 SQL；若缓存含结果行则毫秒级返回，否则重执行 + 探针                                   |
+| **Few-Shot 精确短路**  | `allow_exact_few_shot=True`、无 `history`，且 HITL 回流样例问句完全一致 | 在步骤 2 内直接返回样例 SQL，不调用 LLM（评测泛化时可 `--no-exact-few-shot` 关闭）                       |
 | **规则并行（可选）**       | CLI/API 传入 `use_parallel=True` 且问法命中多指标规则     | `parallel.try_parallel_pipeline` 拆成多条 SQL 并行执行后在 `pty_id` 上合并；成功则提前返回，失败则回退上述主流程 |
 
 
@@ -155,6 +161,7 @@
 - **L1 与 L2 分步执行**：L1 失败直接终止，不会进入 L2。
 - **L2 纠错不回到「步骤 1 剪枝」**：仅在 L2 内部完成「EXPLAIN 失败 → 一次 LLM 纠错 → L1 → 再 EXPLAIN」；全程 LLM 调用上限为 **生成 1 次 + 纠错 1 次**（Few-Shot 短路与 Cache 命中时可为 0 次）。
 - **步骤 6 探针与步骤 7 缓存**：原文档未体现；探针不阻止返回数据，缓存只写入围栏通过的成功路径。
+- **步骤 0b 意图围栏 / 澄清出口**：恶意指令在剪枝前拒绝（`stage=safety`）；需求不清时生成步可停在 `stage=clarify`（空 SQL），由 CLI/对话带 `history` 再调一次 `ask()`。仍不是多轮 Tool/ReAct。
 
 ---
 
@@ -262,8 +269,8 @@ source/
 │   ├── cli.py                  # CLI 入口
 │   ├── agent/                  # 取数 Agent Pipeline（阶段二）
 │   ├── metadata_engine/        # 元数据检索 & Schema 剪枝（阶段一）
-│   ├── safety/                 # L1 AST + L2 EXPLAIN 安全围栏（阶段二）
-│   ├── eval/                   # Execution Match 评测（阶段三）
+│   ├── safety/                 # 意图围栏 + L1 AST + L2 EXPLAIN（阶段二 / Extra3）
+│   ├── eval/                   # Execution Match + Extra3 安全拒绝匹配（阶段三）
 │   ├── llm/                    # DeepSeek 客户端
 │   ├── db/                     # DuckDB 连接
 │   └── api/                    # HTTP API（阶段五预留）
@@ -277,8 +284,8 @@ source/
 │
 ├── scripts/                    # 运维脚本（已有）
 ├── tests/                      # 单元测试
-├── frontend/                   # Chat UI（阶段五预留）
-├── data/                       # 原始 CSV（已有）
+├── frontend/                   # Chat UI：问数页 + 对话模式
+├── data/                       # 原始 CSV；Q&A / extra / extra2 / extra3（只读）
 ├── db/                         # DuckDB 文件（gitignore）
 ├── pyproject.toml              # 项目定义 & 依赖
 └── requirements.txt
@@ -293,9 +300,9 @@ source/
 | ------------------ | -------- | -------------------------- |
 | `metadata_engine/` | 阶段一      | 元数据加载、Join-Graph、Schema 剪枝 |
 | `agent/`           | 阶段二      | NL → SQL Pipeline          |
-| `safety/`          | 阶段二      | sqlglot + EXPLAIN 围栏       |
-| `eval/`            | 阶段三      | EX 评测 + Eval-Agent         |
-| `frontend/`        | 阶段五      | 可视化原型                      |
+| `safety/`          | 阶段二      | 意图围栏 + sqlglot + EXPLAIN |
+| `eval/`            | 阶段三      | EX 评测 + Extra3 安全拒绝 + Eval-Agent |
+| `frontend/`        | 阶段五      | 问数页 + 对话模式                |
 
 
 
