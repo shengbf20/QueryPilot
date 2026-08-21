@@ -71,7 +71,7 @@ python -m querypilot.cli eval --path "data/extra3/Q&A_all.xlsx" --output "logs/e
 python -m querypilot.cli eval --mode agent --path "data/Q&A.xlsx" --workers 4 --output "logs/eval_reports/gold_agent.json"
 ```
 
-最新双路径全量分数（官方 + Extra36 + Extra2 + Extra3）：fast / agent 均为满分，见 `logs/11`。
+最新双路径全量分数与复测命令 / 参数：`logs/11` §3。
 
 - API、问数页：`logs/05` 附录 A/B；对话模式：`frontend/README.md`
 
