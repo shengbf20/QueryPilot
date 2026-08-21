@@ -12,7 +12,7 @@ from openai import OpenAI
 
 from querypilot.agent.models import PipelineResult, StageTiming
 from querypilot.agentic.loop import continue_messages, run_loop, seed_messages
-from querypilot.agentic.tools import AgentWorkspace, build_opening
+from querypilot.agentic.tools import AgentWorkspace, build_followup, build_opening
 from querypilot.agentic.memory import SessionMemory, get_memory
 from querypilot.agentic.protocol import MAX_LLM_TURNS
 from querypilot.metadata_engine.bundle import MetadataBundle
@@ -99,7 +99,7 @@ def run(
     )
 
     if state.messages:
-        thread = continue_messages(state.messages, q)
+        thread = continue_messages(state.messages, build_followup(ws))
     else:
         thread = seed_messages(q, history=incoming, opening=build_opening(ws))
 

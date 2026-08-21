@@ -143,15 +143,7 @@ export default function App() {
     <div className={uiMode === "chat" ? "app app-chat" : "app"}>
       <header className="header">
         <div className="header-row">
-          <div>
-            <h1>QueryPilot</h1>
-            {uiMode === "lab" ? (
-              <>
-                <p>自然语言问数 · Schema 剪枝与耗时透明化</p>
-                <span className="badge">LIVE · /api/ask via Vite proxy</span>
-              </>
-            ) : null}
-          </div>
+          <h1>QueryPilot</h1>
           <div className="mode-toggle" role="tablist" aria-label="界面模式">
             <button
               type="button"
@@ -175,7 +167,11 @@ export default function App() {
         </div>
       </header>
 
-      <div hidden={uiMode !== "lab"}>
+      <div hidden={uiMode !== "lab"} className="lab-host">
+      <p className="lab-lead">
+        自然语言问数 · Schema 剪枝与耗时透明化
+        <span className="badge">LIVE · /api/ask via Vite proxy</span>
+      </p>
       <section className="composer">
         <textarea
           value={question}

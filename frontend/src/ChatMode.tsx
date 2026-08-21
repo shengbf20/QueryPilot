@@ -54,23 +54,49 @@ function ResultTable({ result }: { result: AskResponse }) {
   );
 }
 
+function collectThoughts(result?: AskResponse): string {
+  if (!result) return "";
+  const parts: string[] = [];
+  const rationale = result.rationale?.trim();
+  if (rationale) parts.push(rationale);
+  const trace = result.extras?.agent_trace;
+  if (Array.isArray(trace)) {
+    for (const step of trace) {
+      if (!step || typeof step !== "object") continue;
+      const thought = String((step as { thought?: unknown }).thought || "").trim();
+      if (thought && !parts.includes(thought)) parts.push(thought);
+    }
+  }
+  return parts.join("\n\n");
+}
+
 function AssistantBody({
   msg,
   detailsOpen,
+  thoughtsOpen,
   onToggleDetails,
+  onToggleThoughts,
 }: {
   msg: ChatMessage;
   detailsOpen: boolean;
+  thoughtsOpen: boolean;
   onToggleDetails: () => void;
+  onToggleThoughts: () => void;
 }) {
   const r = msg.result;
   const safety = r?.stage === "safety";
+  const thoughts = collectThoughts(r);
   return (
     <div className="msg-assistant">
-      {r?.rationale ? (
-        <div className="thought">
-          <span className="block-kicker">思考</span>
-          {r.rationale}
+      {thoughts ? (
+        <div className="thought-wrap">
+          <button type="button" className="thought-toggle" onClick={onToggleThoughts}>
+            <span className="thought-chevron" aria-hidden>
+              {thoughtsOpen ? "▾" : "▸"}
+            </span>
+            {thoughtsOpen ? "收起思考过程" : "思考过程"}
+          </button>
+          {thoughtsOpen ? <div className="thought">{thoughts}</div> : null}
         </div>
       ) : null}
       {msg.text ? <p className={safety ? "nl safety-nl" : "nl"}>{msg.text}</p> : null}
@@ -136,6 +162,7 @@ export default function ChatMode({ seedQuestion, seedResult }: ChatModeProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [openDetails, setOpenDetails] = useState<Record<string, boolean>>({});
+  const [openThoughts, setOpenThoughts] = useState<Record<string, boolean>>({});
   const skipSeed = useRef(false);
   const sessionId = useRef(newId());
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -206,6 +233,7 @@ export default function ChatMode({ seedQuestion, seedResult }: ChatModeProps) {
             setMessages([]);
             setError("");
             setOpenDetails({});
+            setOpenThoughts({});
           }}
         >
           新对话
@@ -225,8 +253,12 @@ export default function ChatMode({ seedQuestion, seedResult }: ChatModeProps) {
                 <AssistantBody
                   msg={msg}
                   detailsOpen={Boolean(openDetails[msg.id])}
+                  thoughtsOpen={Boolean(openThoughts[msg.id])}
                   onToggleDetails={() =>
                     setOpenDetails((prev) => ({ ...prev, [msg.id]: !prev[msg.id] }))
+                  }
+                  onToggleThoughts={() =>
+                    setOpenThoughts((prev) => ({ ...prev, [msg.id]: !prev[msg.id] }))
                   }
                 />
               </div>

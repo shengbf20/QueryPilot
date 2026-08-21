@@ -17,7 +17,13 @@ from querypilot.agentic.protocol import (
     parse_agent_tools,
     parse_agent_turn,
 )
-from querypilot.agentic.tools import AgentWorkspace, run_sql
+from querypilot.agentic.tools import (
+    AgentWorkspace,
+    build_followup,
+    build_opening,
+    refresh_schema,
+    run_sql,
+)
 from querypilot.config import get_settings
 from querypilot.metadata_engine import load_metadata
 from querypilot.safety.intent_guard import SAFETY_WARNING_PREFIX
@@ -89,6 +95,7 @@ def test_agent_system_copies_sql_rules():
     assert "aset_pft" in SYSTEM_PROMPT
     assert "不要加 up_org_name" in SYSTEM_PROMPT
     assert "只输出 JSON 对象" not in SYSTEM_PROMPT
+    assert "不是权限" in SYSTEM_PROMPT or "不是访问控制" in SYSTEM_PROMPT
 
 
 def test_parse_agent_tools_multiple_in_one_turn():
@@ -253,7 +260,98 @@ def test_agentic_session_keeps_constraints():
     assert second.stage == "agent"
     first_call = client2.chat.completions.snapshots[0]
     assert first_call[: len(prefix)] == prefix
-    assert first_call[len(prefix)] == {"role": "user", "content": "要人数"}
+    follow = first_call[len(prefix)]
+    assert follow["role"] == "user"
+    assert "要人数" in follow["content"]
+    assert "本题相关表" in follow["content"]
+
+
+def test_refresh_schema_adds_tables_for_new_question():
+    md = load_metadata()
+    ws = AgentWorkspace(question="个人客户一共有多少人？", metadata=md)
+    build_opening(ws)
+    assert "ads_cust_info_d" in ws.tables
+    ws.tables = ["ads_cust_info_d"]
+    ws.question = (
+        "2026年2月日均总资产超过20万元、且在3月31日持有开放式基金的客户，"
+        "其持仓按产品大类汇总市值，按市值降序、大类名排序。"
+    )
+    ws.history = [{"role": "user", "content": "个人客户一共有多少人？"}]
+    follow = build_followup(ws)
+    assert "dws_cust_aset_d" in ws.tables
+    assert "dwd_cust_hold_d" in ws.tables
+    assert "dim_product" in ws.tables
+    assert "ads_cust_info_d" in ws.tables
+    assert "dws_cust_aset_d" in follow
+    assert "本题相关表" in follow
+
+
+@requires_db
+def test_stale_session_tables_do_not_block_followup_sql(metadata):
+    ws = AgentWorkspace(
+        question="2026年2月日均总资产超过20万元的客户有多少",
+        metadata=metadata,
+        tables=["ads_cust_info_d"],
+    )
+    observe = run_sql(
+        ws,
+        {
+            "sql": (
+                "SELECT COUNT(*) AS cnt FROM dws_cust_aset_d "
+                "WHERE data_dt BETWEEN '20260201' AND '20260228'"
+            )
+        },
+    )
+    assert "不被允许" not in observe
+    assert "未授权" not in observe
+    assert ws.ran is True
+
+
+def test_search_schema_does_not_drop_prior_tables():
+    md = load_metadata()
+    ws = AgentWorkspace(
+        question="个人客户一共有多少人？",
+        metadata=md,
+        tables=["dws_cust_aset_d", "dwd_cust_hold_d"],
+    )
+    from querypilot.agentic.tools import search_schema
+
+    search_schema(ws, {"query": "客户"})
+    assert "dws_cust_aset_d" in ws.tables
+    assert "ads_cust_info_d" in ws.tables
+
+
+@requires_db
+def test_session_followup_reprunes_before_run_sql(metadata):
+    mem = SessionMemory()
+    sql = (
+        "SELECT COUNT(*) AS cnt FROM dws_cust_aset_d "
+        "WHERE data_dt BETWEEN '20260201' AND '20260228'"
+    )
+    client1 = _FakeClient(
+        ['{"tool":"finish","args":{"message":"先记下客户表"},"thought":"停"}']
+    )
+    first = run("个人客户一共有多少人？", session_id="reprune", client=client1, memory=mem)
+    assert first.stage == "agent"
+    assert mem.get("reprune").last_tables
+    client2 = _FakeClient(
+        [
+            f'{{"tool":"run_sql","args":{{"sql":"{sql}"}},"thought":"日均资产"}}',
+            '{"tool":"finish","args":{},"thought":"完成"}',
+        ]
+    )
+    second = run(
+        "2026年2月日均总资产超过20万元的客户有多少",
+        session_id="reprune",
+        client=client2,
+        memory=mem,
+        metadata=metadata,
+    )
+    assert second.ok, second.message
+    assert second.stage == "done"
+    assert "dws_cust_aset_d" in second.sql
+    user_turn = client2.chat.completions.snapshots[0][-1]["content"]
+    assert "dws_cust_aset_d" in user_turn
 
 
 def test_api_ask_agent_dispatches():

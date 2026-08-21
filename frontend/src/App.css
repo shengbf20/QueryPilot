@@ -1,18 +1,23 @@
 .app {
-  max-width: 960px;
-  margin: 0 auto;
-  padding: 1.5rem 1.25rem 3rem;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
 }
 
 .header {
-  margin-bottom: 1.25rem;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
 }
 
 .header-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 1rem;
+  width: 100%;
+  padding: 0.7rem 1.25rem;
 }
 
 .mode-toggle {
@@ -41,25 +46,34 @@
 
 .header h1 {
   margin: 0;
-  font-size: 1.5rem;
+  font-size: 1.2rem;
   letter-spacing: -0.02em;
+  line-height: 1.2;
 }
 
-.header p {
-  margin: 0.35rem 0 0;
+.lab-host {
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1.15rem 1.25rem 3rem;
+}
+
+.lab-lead {
+  margin: 0 0 1rem;
   color: var(--muted);
-  font-size: 0.95rem;
+  font-size: 0.92rem;
 }
 
 .badge {
   display: inline-block;
-  margin-top: 0.6rem;
-  padding: 0.15rem 0.55rem;
+  margin-left: 0.55rem;
+  padding: 0.12rem 0.5rem;
   border-radius: 999px;
   background: var(--accent-soft);
   color: var(--accent);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-weight: 600;
+  vertical-align: middle;
 }
 
 .composer {
@@ -244,27 +258,8 @@ table.result th {
 }
 
 .app-chat {
-  max-width: none;
   height: 100vh;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.app-chat .header {
-  flex-shrink: 0;
-  width: 100%;
-  max-width: 768px;
-  margin: 0 auto;
-  padding: 0.85rem 1.25rem 0.45rem;
-}
-
-.app-chat .header-row {
-  align-items: center;
-}
-
-.app-chat .header h1 {
-  font-size: 1.15rem;
+  overflow: hidden;
 }
 
 .chat-host {
@@ -351,9 +346,35 @@ table.result th {
   letter-spacing: 0.04em;
 }
 
+.thought-wrap {
+  margin: 0 0 0.75rem;
+}
+
+.thought-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.thought-toggle:hover {
+  color: var(--ink);
+}
+
+.thought-chevron {
+  display: inline-block;
+  width: 0.85rem;
+  font-size: 0.7rem;
+}
+
 .thought {
-  margin: 0 0 0.85rem;
-  padding: 0.15rem 0 0.15rem 0.75rem;
+  margin: 0.45rem 0 0;
+  padding: 0.55rem 0 0.15rem 0.75rem;
   border-left: 2px solid var(--line);
   color: var(--muted);
   font-size: 0.88rem;

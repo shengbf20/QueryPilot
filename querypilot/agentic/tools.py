@@ -60,6 +60,11 @@ def _md(ws: AgentWorkspace) -> MetadataBundle:
     return ws.metadata
 
 
+def _catalog_tables(ws: AgentWorkspace) -> list[str]:
+    """All known tables. Prune is prompt-only; it is not an access control list."""
+    return list(_md(ws).tables)
+
+
 def _format_rows(columns: list[str], rows: list[tuple[Any, ...]], limit: int) -> str:
     if not columns:
         return "(无列)"
@@ -70,13 +75,37 @@ def _format_rows(columns: list[str], rows: list[tuple[Any, ...]], limit: int) ->
     return f"{header}\n{body}{more}" if body else header
 
 
-def build_opening(ws: AgentWorkspace, *, max_few_shots: int = 3) -> str:
-    """First user turn: same prune + few-shot materials as ask(), then tool hint."""
+def refresh_schema(ws: AgentWorkspace) -> list[str]:
+    """Re-prune for the current question; keep prior tables so follow-ups do not shrink."""
     md = _md(ws)
     pruned = get_pruned_schema(ws.prune_text(), md)
     ws.pruned = pruned
-    ws.tables = list(pruned.tables)
+    prior = list(ws.tables)
+    ws.tables = list(dict.fromkeys([*pruned.tables, *prior]))
     ws.schema_text = pruned.format_for_prompt(md, include_values=ws.include_values)
+    return ws.tables
+
+
+def build_followup(ws: AgentWorkspace) -> str:
+    """Later user turn: new question plus a freshly pruned schema."""
+    refresh_schema(ws)
+    names = ", ".join(ws.tables) or "(无表命中)"
+    return "\n".join(
+        [
+            f"用户问题:\n{ws.question}",
+            "",
+            f"本题相关表: {names}",
+            "",
+            ws.schema_text,
+            "",
+            "上一轮相关表不是权限限制。库内只读表均可 run_sql，不要反问是否放宽权限。",
+        ]
+    )
+
+
+def build_opening(ws: AgentWorkspace, *, max_few_shots: int = 3) -> str:
+    """First user turn: same prune + few-shot materials as ask(), then tool hint."""
+    refresh_schema(ws)
     shots = select_few_shots(ws.question, load_few_shots(), max_few_shots=max_few_shots)
     parts = [f"用户问题:\n{ws.question}", "", ws.schema_text]
     if shots:
@@ -103,7 +132,7 @@ def search_schema(ws: AgentWorkspace, args: dict[str, Any]) -> str:
     md = _md(ws)
     pruned = get_pruned_schema(text, md)
     ws.pruned = pruned
-    ws.tables = list(pruned.tables)
+    ws.tables = list(dict.fromkeys([*pruned.tables, *ws.tables]))
     ws.schema_text = pruned.format_for_prompt(md, include_values=ws.include_values)
     names = ", ".join(ws.tables) or "(无表命中)"
     return f"相关表: {names}\n\n{ws.schema_text}"
@@ -117,12 +146,12 @@ def run_sql(ws: AgentWorkspace, args: dict[str, Any]) -> str:
     ws.rationale = str(args.get("rationale") or ws.rationale)
     ws.validated = False
     md = _md(ws)
-    allowed = ws.tables or (list(ws.pruned.tables) if ws.pruned else None)
+    allowed = _catalog_tables(ws)
 
     l1 = guard_sql(ws.sql, metadata=md, allowed_tables=allowed)
     if not l1.ok:
         detail = "; ".join(v.message for v in l1.violations) or "语句不被允许"
-        return f"未执行。这条 SQL 不被允许（只读取数，不能写库或访问未授权表）。{detail}"
+        return f"未执行。这条 SQL 不被允许（只读取数，不能写库）。{detail}"
     ws.sql = l1.sql
 
     l2 = validate_with_l2(
