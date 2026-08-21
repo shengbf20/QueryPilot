@@ -22,7 +22,7 @@
   - ~~不明确指令 -> 新增交互版块~~ ✅ `ask(history=...)` / `stage=clarify`；CLI 可追问
   - 进一步扩展题库：泛化能力？稳定性？
 - 与 Agent 自更新/自进化深度结合：参考 logs-06
-- 吸收 Agent 优势，使项目更具有 Agent 特征的同时提升性能：参考 logs-07（双路径进行中，见 `logs/10-双路径强Agent与快取数并行.md`）
+- ~~吸收 Agent 优势，使项目更具有 Agent 特征的同时提升性能~~ ✅ 双路径已落地（`logs/10`）；口径对齐与 Agent 收口见 `logs/11`
 - 可持续运营，添加新表的元数据层支持：参考 logs-08
 - 测量并减少 token 使用量？（降低成本/开销）
 
@@ -68,8 +68,10 @@ python -m querypilot.cli eval --path "data/extra/Q&A_all.xlsx" --paths "data/ext
 python -m querypilot.cli eval --path "data/extra3/Q&A_all.xlsx" --output "logs/eval_reports/extra3_safety.json"
 
 # 强 Agent 官方金标（不走 ask()）
-python -m querypilot.cli eval --mode agent --path "data/Q&A.xlsx" --workers 4 --output "logs/eval_reports/eval_agent_gold.json"
+python -m querypilot.cli eval --mode agent --path "data/Q&A.xlsx" --workers 4 --output "logs/eval_reports/gold_agent.json"
 ```
+
+最新双路径全量分数（官方 + Extra36 + Extra2 + Extra3）：fast / agent 均为满分，见 `logs/11`。
 
 - API、问数页：`logs/05` 附录 A/B；对话模式：`frontend/README.md`
 
@@ -154,7 +156,7 @@ python -m querypilot.cli eval --mode agent --path "data/Q&A.xlsx" --workers 4 --
 | ------------------ | ----------------------------------------- | --------------------------------------------------- |
 | 维表与事实表 **日期不对齐**   | `ads_cust_info_d` 的 `data_dt` 与事实表日期集合不一致 | 跨表默认只按 `pty_id` / `org_id` Join，**不要默认加** `data_dt` |
 | 公共维表 `dim_public`  | 同一 `code` 可属不同编码类型                        | 必须同时匹配 `code` + `code_type_id`                      |
-| 复杂营销口径（盈亏、Top-N 等） | 金标公式与直觉不完全一致                              | 指标树 / Prompt 规则 / 必要时确定性改写，并在文档标明「对齐金标 EX」          |
+| 复杂营销口径（盈亏、Top-N 等） | 期间盈亏须减「期初 nm+fc」整体                         | `aset_pft = end−(bgn_nm+bgn_fc)+out−in`；Prompt / Few-Shot / `pnl_fix` 对齐（`logs/11`） |
 | 准确率 vs 泛化          | 精确问句回流可「秒过」原题，改写后仍可能掉点                    | 评测分轨：默认轨（可开短路）与关短路 / Extra 泛化轨                      |
 
 
@@ -356,6 +358,7 @@ Schema 剪枝与围栏本身是毫秒～百毫秒级；端到端冷路径主要�
 | 原型 UI / API（附录 A/B） | `logs/05-阶段五-原型系统交付与验证.md`；对话模式见 `frontend/README.md` |
 | Extra3 安全评测           | `data/extra3/README.md`                          |
 | 双路径强 Agent            | `logs/10-双路径强Agent与快取数并行.md`             |
+| 盈亏口径对齐与 Agent 收口     | `logs/11-口径对齐与双路径收口.md`                   |
 | 消融实验与组件贡献分析        | `logs/09-阶段九-消融实验与改进总结.md`                 |
 
 

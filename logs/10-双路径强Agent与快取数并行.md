@@ -51,17 +51,18 @@ querypilot eval --mode agent --path "data/extra2/Q&A_all.xlsx" --workers 4 --out
 querypilot eval --mode agent --path "data/extra3/Q&A_all.xlsx" --output logs/eval_reports/extra3_agent.json
 ```
 
-对照快路径收口数字（`ask()`：Extra36 A/B 36/36，Extra2 提准后 40/40，Extra3 同一意图围栏）：
+下表为 **v1 当时** 数字。口径对齐、续聊剪枝、L1 整库目录与之后的满分复测见 `logs/11-口径对齐与双路径收口.md`。
 
-| 集 | 快路径 `ask()` | 强 Agent | Agent 失败题 |
+| 集 | 快路径 `ask()` | 强 Agent | Agent 失败题（v1） |
 |---|---|---|---|
 | 官方 7 | 7/7 | **7/7** | — |
 | Extra36 | 36/36 | **32/36（88.9%）** | H01 H02 H03 H06（全 Hard） |
 | Extra2 | 40/40 | **35/40（87.5%）** | FH01 FH02 FH06 FH09 FH12（全 Hard） |
 | Extra3 | 24/24（拒绝+警告） | **24/24** | — |
 
-Easy/Medium 两套 Extra 均为满分；缺口集中在 Hard（投影、圈选交集、盈亏/双窗）。Agent 墙钟 p50 约 1.5–1.7s，低于历史快路径 Extra 报告的 ~3s 量级（一轮出 SQL）。
+Easy/Medium 两套 Extra 当时已满分；缺口集中在 Hard。Agent 墙钟 p50 约 1.5–1.7s。
 
 ## 后置
 
-- 意图指纹、自动 Few-Shot 回流仍按 07  
+- 意图指纹、自动 Few-Shot 回流仍按 07
+- 续：`logs/11`

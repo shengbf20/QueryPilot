@@ -86,6 +86,6 @@ python scripts/import_data.py
 - Agent coding principles (mandatory): `AGENTS.md`
 - Competition requirements & overall plan: `README.md`
 - Design overview & architecture narrative: `logs/Summary.md`
-- Per-phase implementation logs: `logs/01-*` through `logs/05-*`
+- Per-phase implementation logs: `logs/01-*` through `logs/05-*`；双路径 / 口径收口见 `logs/10`、`logs/11`
 - Eval reports: `logs/eval_reports/`
 - Performance reports: `logs/perf_reports/`
