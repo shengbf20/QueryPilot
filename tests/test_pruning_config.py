@@ -15,16 +15,20 @@ from querypilot.metadata_engine import (
 
 
 def test_load_pruning_config_defaults_match_repo_yaml():
-    """仓库 pruning.yaml 与内置默认值一致（外置搬运无行为变化）。"""
+    """仓库 pruning.yaml 覆盖内置默认值（外置搬运无行为变化的迁移检查）。
+
+    内置默认值是外置前的历史基线；repo YAML 允许在其上追加新表知识
+    （如服务经理域），因此断言超集而非全等。
+    """
     config = load_pruning_config()
     builtin = PruningConfig()
     assert config.default_fallback_table == builtin.default_fallback_table
-    assert config.fact_tables == builtin.fact_tables
+    assert config.fact_tables >= builtin.fact_tables
     assert config.org_dim_tables == builtin.org_dim_tables
     assert config.customer_cues == builtin.customer_cues
     assert config.auto_seed_blocklist == builtin.auto_seed_blocklist
-    assert config.domain_seed_cues == builtin.domain_seed_cues
-    assert config.query_expansions == builtin.query_expansions
+    assert set(config.domain_seed_cues) >= set(builtin.domain_seed_cues)
+    assert set(config.query_expansions) >= set(builtin.query_expansions)
 
 
 def test_load_pruning_config_missing_file_falls_back(tmp_path: Path):

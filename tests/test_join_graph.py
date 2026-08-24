@@ -16,9 +16,9 @@ _EXPECTED_LOOKUP_COLUMNS = {
 
 def test_join_graph_loads():
     graph = load_join_graph()
-    assert len(graph.tables) == 8
-    assert len(graph.edges) == 12
-    assert len(graph.paths) == 8
+    assert len(graph.tables) == 10
+    assert len(graph.edges) == 15
+    assert len(graph.paths) == 10
 
 
 def test_no_default_data_dt_rule_and_edge_keys():

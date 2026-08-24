@@ -1,4 +1,4 @@
-"""将 data/ 下 CSV 导入 DuckDB。"""
+"""将 data/（官方）与 data_sim/（模拟新表）下 CSV 导入 DuckDB。"""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import duckdb
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
+SIM_DATA_DIR = ROOT / "data_sim"
 DEFAULT_DB_PATH = ROOT / "db" / "competition.duckdb"
 
 TABLES: dict[str, dict] = {
@@ -137,6 +138,30 @@ TABLES: dict[str, dict] = {
             )
         """,
     },
+    # --- 模拟新表（data_sim/，见 logs/08 新表接入测试）---
+    "dim_mgr_info": {
+        "pattern": "dim_mgr_info*.csv",
+        "csv_dir": SIM_DATA_DIR,
+        "ddl": """
+            CREATE TABLE dim_mgr_info (
+                mgr_id VARCHAR NOT NULL,
+                mgr_name VARCHAR,
+                org_id VARCHAR,
+                mgr_title VARCHAR
+            )
+        """,
+    },
+    "dwd_cust_mgr_rel_d": {
+        "pattern": "dwd_cust_mgr_rel_d*.csv",
+        "csv_dir": SIM_DATA_DIR,
+        "ddl": """
+            CREATE TABLE dwd_cust_mgr_rel_d (
+                data_dt VARCHAR NOT NULL,
+                pty_id VARCHAR NOT NULL,
+                mgr_id VARCHAR NOT NULL
+            )
+        """,
+    },
 }
 
 
@@ -150,7 +175,7 @@ def find_csv(data_dir: Path, pattern: str) -> Path:
 
 
 def import_table(con: duckdb.DuckDBPyConnection, table: str, config: dict) -> int:
-    csv_path = find_csv(DATA_DIR, config["pattern"])
+    csv_path = find_csv(config.get("csv_dir", DATA_DIR), config["pattern"])
     con.execute(f"DROP TABLE IF EXISTS {table}")
     con.execute(config["ddl"].strip())
     con.execute(

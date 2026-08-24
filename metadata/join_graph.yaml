@@ -64,6 +64,18 @@ tables:
     primary_key: [data_dt, org_id]
     role: 营业部与上级分公司
 
+  dim_mgr_info:
+    alias: 服务经理信息表
+    layer: dim
+    primary_key: [mgr_id]
+    role: 服务经理归属与职级
+
+  dwd_cust_mgr_rel_d:
+    alias: 客户服务关系表
+    layer: dwd
+    primary_key: [data_dt, pty_id]
+    role: 客户与服务经理的服务关系
+
 edges:
   # --- 客户 ↔ 事实表（pty_id）---
   - id: customer_to_asset
@@ -128,6 +140,33 @@ edges:
     join:
       prdt_id: prdt_id
     cardinality: "N:1"
+
+  # --- 服务经理域（模拟新表接入，见 logs/08）---
+  - id: rel_to_customer
+    from: dwd_cust_mgr_rel_d
+    to: ads_cust_info_d
+    type: fact
+    join:
+      pty_id: pty_id
+    cardinality: "N:1"
+    rules: [no_default_data_dt]
+
+  - id: rel_to_mgr
+    from: dwd_cust_mgr_rel_d
+    to: dim_mgr_info
+    type: dimension
+    join:
+      mgr_id: mgr_id
+    cardinality: "N:1"
+
+  - id: mgr_to_branch
+    from: dim_mgr_info
+    to: dim_branch
+    type: dimension
+    join:
+      org_id: org_id
+    cardinality: "N:1"
+    rules: [no_default_data_dt]
 
   # --- 客户 ↔ dim_public（编码字典，5 条）---
   - id: customer_gender_lookup
@@ -225,3 +264,13 @@ paths:
     description: 客户 + 资产 + 持仓 + 产品（营销圈选常见路径）
     tables: [ads_cust_info_d, dws_cust_aset_d, dwd_cust_hold_d, dim_product]
     edges: [customer_to_asset, customer_to_hold, hold_to_product]
+
+  customer_with_mgr:
+    description: 客户 + 服务经理（按经理圈选客户）
+    tables: [ads_cust_info_d, dwd_cust_mgr_rel_d, dim_mgr_info]
+    edges: [rel_to_customer, rel_to_mgr]
+
+  mgr_with_branch:
+    description: 服务经理 + 营业部（经理归属分析）
+    tables: [dim_mgr_info, dim_branch]
+    edges: [mgr_to_branch]

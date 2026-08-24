@@ -13,6 +13,7 @@ fact_tables:
   - dws_cust_fin_d
   - dwd_cust_hold_d
   - dwd_cust_tran_d
+  - dwd_cust_mgr_rel_d
 
 # 组织维表：与事实表一同参与客户枢纽注入判断
 org_dim_tables:
@@ -41,6 +42,10 @@ domain_seed_cues:
     table: dws_cust_fin_d
   - cues: [盈亏, 损益, 收益情况]
     table: dws_cust_aset_d
+  - cues: [服务经理, 客户经理, 经理]
+    table: dim_mgr_info
+  - cues: [服务关系, 名下客户, 服务经理, 客户经理]
+    table: dwd_cust_mgr_rel_d
 
 # 问题侧同义扩展：命中触发词后向检索文本追加补充词
 query_expansions:
@@ -66,3 +71,5 @@ query_expansions:
     terms: [产品类型, 产品二级分类, 产品]
   - triggers: [产品大类, 产品类型, 证券]
     terms: [产品, 产品大类, 产品一级分类]
+  - triggers: [客户经理]
+    terms: [服务经理, 服务关系]

@@ -30,9 +30,9 @@ def test_validate_metadata_all_cross_checks_and_graph_stats():
     result = validate_metadata_all(skip_db=True)
     assert result.ok, result.errors
     assert not any(e.startswith("[cross]") for e in result.errors)
-    assert result.stats.get("edges") == 12
-    assert result.stats.get("paths") == 8
-    assert result.stats.get("tables") == 8
+    assert result.stats.get("edges") == 15
+    assert result.stats.get("paths") == 10
+    assert result.stats.get("tables") == 10
 
     tables = load_all_tables()
     graph = load_join_graph()
