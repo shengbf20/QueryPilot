@@ -1,4 +1,8 @@
-"""Load table metadata from YAML files."""
+"""Load table metadata from YAML files.
+
+表清单由 ``metadata/tables/`` 目录扫描动态发现（discover_table_names），
+不再维护代码内副本；加新表 = 放一个 YAML 文件。
+"""
 
 from __future__ import annotations
 
@@ -8,49 +12,6 @@ import yaml
 
 from querypilot.config import get_settings
 from querypilot.metadata_engine.models import ColumnMeta, TableMeta
-
-EXPECTED_TABLES = [
-    "ads_cust_info_d",
-    "dim_branch",
-    "dim_product",
-    "dim_public",
-    "dwd_cust_hold_d",
-    "dwd_cust_tran_d",
-    "dws_cust_aset_d",
-    "dws_cust_fin_d",
-]
-
-# Canonical column lists aligned with scripts/import_data.py
-DB_COLUMNS: dict[str, list[str]] = {
-    "dim_product": [
-        "prdt_id", "prdt_name", "sor_prdt_id", "market_id",
-        "prdt_type_id", "prdt_type_name", "up_prdt_type_id", "up_prdt_type_name",
-    ],
-    "ads_cust_info_d": [
-        "data_dt", "pty_id", "sor_pty_id", "cust_lvl_cd", "cust_status", "cust_type",
-        "prov_name", "city_name", "birth_dt", "cust_age", "name",
-        "gender_cd", "edu_cd", "prof_cd", "org_id",
-    ],
-    "dws_cust_fin_d": [
-        "data_dt", "pty_id", "sys_source", "cash_in", "cash_out",
-        "tran_in", "tran_out", "assign_in", "assign_out",
-    ],
-    "dwd_cust_hold_d": [
-        "data_dt", "pty_id", "prdt_id", "sys_source", "ccy", "hold_cnt", "mkt_val",
-    ],
-    "dwd_cust_tran_d": [
-        "data_dt", "pty_id", "prdt_id", "sys_source", "ccy",
-        "buy_cnt", "buy_mnt", "buy_rake", "buy_amt", "buy_fare",
-        "sell_cnt", "sell_mnt", "sell_rake", "sell_amt", "sell_fare",
-    ],
-    "dws_cust_aset_d": [
-        "data_dt", "pty_id", "nm_tot_aset", "nm_bal", "fc_pur_aset", "fc_bal",
-    ],
-    "dim_public": ["code", "code_type_id", "describe"],
-    "dim_branch": [
-        "data_dt", "org_id", "org_name", "up_org_id", "up_org_name",
-    ],
-}
 
 
 def _parse_column(raw: dict) -> ColumnMeta:
@@ -87,15 +48,18 @@ def load_table_meta(path: Path) -> TableMeta:
     return _parse_table(raw)
 
 
+def discover_table_names(tables_dir: Path | None = None) -> list[str]:
+    """扫描 metadata/tables/*.yaml，返回排序后的表名清单。"""
+    tables_dir = tables_dir or (get_settings().metadata_dir / "tables")
+    return sorted(p.stem for p in tables_dir.glob("*.yaml"))
+
+
 def load_all_tables(tables_dir: Path | None = None) -> dict[str, TableMeta]:
     tables_dir = tables_dir or (get_settings().metadata_dir / "tables")
     result: dict[str, TableMeta] = {}
-    for table_name in EXPECTED_TABLES:
-        path = tables_dir / f"{table_name}.yaml"
-        if not path.exists():
-            raise FileNotFoundError(f"Missing metadata file: {path}")
-        meta = load_table_meta(path)
+    for table_name in discover_table_names(tables_dir):
+        meta = load_table_meta(tables_dir / f"{table_name}.yaml")
         if meta.table != table_name:
-            raise ValueError(f"{path.name}: table field '{meta.table}' != expected '{table_name}'")
+            raise ValueError(f"{table_name}.yaml: table field '{meta.table}' != expected '{table_name}'")
         result[table_name] = meta
     return result

@@ -5,7 +5,7 @@ import pytest
 
 from querypilot.config import get_settings
 from querypilot.metadata_engine import (
-    EXPECTED_TABLES,
+    discover_table_names,
     load_all_tables,
     validate_all,
 )
@@ -14,7 +14,7 @@ from querypilot.metadata_engine.value_descriptors import load_value_descriptor_c
 
 def test_all_tables_loaded():
     tables = load_all_tables()
-    assert set(tables.keys()) == set(EXPECTED_TABLES)
+    assert set(tables.keys()) == set(discover_table_names())
 
 
 def test_validation_passes():

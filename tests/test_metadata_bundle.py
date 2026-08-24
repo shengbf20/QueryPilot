@@ -3,13 +3,13 @@
 import pytest
 
 from querypilot.config import get_settings
-from querypilot.metadata_engine import EXPECTED_TABLES, MetadataBundle, load_metadata
+from querypilot.metadata_engine import MetadataBundle, discover_table_names, load_metadata
 
 
 def test_load_metadata_structure():
     metadata = load_metadata(load_db_codes=False)
     assert isinstance(metadata, MetadataBundle)
-    assert set(metadata.tables.keys()) == set(EXPECTED_TABLES)
+    assert set(metadata.tables.keys()) == set(discover_table_names())
     assert len(metadata.join_graph.edges) == 12
     assert metadata.engine is not None
     assert len(metadata.metrics) >= 5

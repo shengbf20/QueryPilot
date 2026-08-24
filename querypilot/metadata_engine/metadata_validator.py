@@ -8,7 +8,7 @@ import duckdb
 
 from querypilot.metadata_engine.join_graph_loader import JoinGraph, load_join_graph
 from querypilot.metadata_engine.join_graph_validator import validate_join_graph
-from querypilot.metadata_engine.loader import EXPECTED_TABLES, load_all_tables
+from querypilot.metadata_engine.loader import load_all_tables
 from querypilot.metadata_engine.models import TableMeta
 from querypilot.metadata_engine.validator import ValidationResult, validate_table
 from querypilot.metadata_engine.value_descriptors import (
@@ -51,10 +51,8 @@ def _merge_result(
 
 def _validate_tables_step(tables: dict[str, TableMeta]) -> ValidationResult:
     result = ValidationResult()
-    if len(tables) != len(EXPECTED_TABLES):
-        result.add_error(f"expected {len(EXPECTED_TABLES)} tables, got {len(tables)}")
     for meta in tables.values():
-        validate_table(meta, result)
+        validate_table(meta, result, known_tables=set(tables))
     return result
 
 

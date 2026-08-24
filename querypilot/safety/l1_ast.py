@@ -10,7 +10,7 @@ from sqlglot import exp
 from sqlglot.errors import ParseError
 
 from querypilot.metadata_engine.bundle import MetadataBundle
-from querypilot.metadata_engine.loader import EXPECTED_TABLES, load_all_tables
+from querypilot.metadata_engine.loader import load_all_tables
 from querypilot.safety.models import ColumnFix, GuardViolation, L1GuardResult
 
 _FORBIDDEN_TYPES: tuple[type[exp.Expression], ...] = (
@@ -70,9 +70,7 @@ def guard_sql(
         )
 
     catalog = build_column_catalog(metadata)
-    allow = set(allowed_tables) if allowed_tables is not None else set(catalog.keys()) or set(
-        EXPECTED_TABLES
-    )
+    allow = set(allowed_tables) if allowed_tables is not None else set(catalog.keys())
 
     try:
         expressions = sqlglot.parse(normalized, read=_DIALECT)

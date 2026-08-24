@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from querypilot.metadata_engine.join_graph_loader import JoinGraph, load_join_graph
-from querypilot.metadata_engine.loader import EXPECTED_TABLES, load_all_tables
+from querypilot.metadata_engine.loader import load_all_tables
 from querypilot.metadata_engine.validator import ValidationResult
 from querypilot.metadata_engine.value_descriptors import load_value_descriptor_config
 
@@ -25,11 +25,9 @@ def _validate_tables(
     tables: dict,
     result: ValidationResult,
 ) -> None:
-    for name in EXPECTED_TABLES:
+    for name in tables:
         if name not in graph.tables:
             result.add_error(f"join_graph missing table: {name}")
-        if name not in tables:
-            result.add_error(f"metadata missing table: {name}")
 
     for name, graph_table in graph.tables.items():
         if name not in tables:

@@ -9,8 +9,7 @@ from querypilot.metadata_engine.join_graph import (
 from querypilot.metadata_engine.join_graph_loader import JoinGraph, JoinEdge, JoinPath, load_join_graph
 from querypilot.metadata_engine.join_graph_validator import validate_join_graph as validate_join_graph_only
 from querypilot.metadata_engine.loader import (
-    DB_COLUMNS,
-    EXPECTED_TABLES,
+    discover_table_names,
     load_all_tables,
     load_table_meta,
 )
@@ -54,8 +53,7 @@ __all__ = [
     "ValidationResult",
     "ValueDescriptorRegistry",
     "ValueDescriptorValidationResult",
-    "DB_COLUMNS",
-    "EXPECTED_TABLES",
+    "discover_table_names",
     "load_metadata",
     "load_all_tables",
     "load_table_meta",
