@@ -162,21 +162,6 @@ TABLES: dict[str, dict] = {
             )
         """,
     },
-    # --- dwd_cust_risk_assess_d（scripts/add_table.py 自动登记）---
-    "dwd_cust_risk_assess_d": {
-        "pattern": "dwd_cust_risk_assess_d*.csv",
-        "csv_dir": SIM_DATA_DIR,
-        "ddl": """
-            CREATE TABLE dwd_cust_risk_assess_d (
-                data_dt VARCHAR,
-                pty_id VARCHAR,
-                risk_lvl_cd VARCHAR,
-                risk_score INTEGER,
-                assess_dt VARCHAR,
-                expire_dt VARCHAR
-            )
-        """,
-    },
 }
 
 

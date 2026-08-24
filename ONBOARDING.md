@@ -173,12 +173,43 @@ $env:PYTHONIOENCODING="utf-8"; python -m querypilot.cli ask "[question]"
 
 ---
 
+## 卸载：删除一张已接入的表（保留 CSV）
+
+接入流程的逆操作，一条命令撤销全部登记（CSV 不动）：
+
+```powershell
+# 先看会删什么（不写盘）
+$env:PYTHONIOENCODING="utf-8"; python scripts/remove_table.py [name] --dry-run
+
+# 确认后执行（同时 DROP DuckDB 里的表）
+$env:PYTHONIOENCODING="utf-8"; python scripts/remove_table.py [name]
+```
+
+自动撤销的登记（与接入流程一一对应）：
+
+| 登记 | 撤销动作 |
+|------|---------|
+| `scripts/import_data.py` TABLES 条目 | 删除条目（连同自动登记注释行），语法校验 |
+| `metadata/tables/[name].yaml` | 删除文件 |
+| `join_graph.yaml` tables 条目 + 双向边 | 删除（其他表的边不受影响） |
+| `pruning.yaml` fact_tables 行 + 触发词条目 | 删除 |
+| `value_descriptors.yaml` column_refs | 删除引用；引用清空的字典降级回 `unused_code_types` |
+| DuckDB 表 | `DROP TABLE`（`--keep-db` 跳过） |
+
+删除后自带**反向核验**（A6 的逆检查）：元数据中不应残留任何痕迹，有残留会列出来并以非零退出。
+
+安全护栏：**非 `add_table.py` 自动登记的表默认拒绝删除**（如原始赛题表——删了会破坏既有查询），确需删除加 `--force`。需要重新接入时从 ② 开始重走即可。
+
+---
+
 ## 常见问题
 
 | 现象 | 原因与处理 |
 |------|-----------|
 | `table not found in database` | 没跑 ②/③，或表名/DDL 拼错；用 ④ 先验证入库 |
 | 重建报 DuckDB 文件锁错误 | serve/chat/评测进程还开着，关掉再跑 |
+| remove_table 报「拒绝: 不是自动登记的表」 | 该表是手写登记（多为原始赛题表）；确需删除加 `--force` |
+| remove_table 报 DuckDB 占用 | serve/chat 还开着；关掉重跑，或先 `--keep-db` 只撤销登记 |
 | 网页报「表不存在」 | 问卷接口只认**已入库**的表；先完成 ②/③ |
 | 网页提交报 409 | 该表 YAML 已存在；确需覆盖走命令行 `--force`（慎用） |
 | A7 报 `missing description` | 问卷里某列含义留空（每列必填） |

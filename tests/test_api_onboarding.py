@@ -1,6 +1,7 @@
 """/onboarding 自助接入 UI 后端测试（GET 页面 / 问卷 / 注册全流程）。
 
-注册只写入元数据副本（metadata_dir 指向 tmp_path），不触碰仓库 metadata/。
+自建试验床：把 data_sim 的风险表 CSV 导入真实库的临时副本，
+注册只写入元数据副本（metadata_dir 指向 tmp_path），不触碰仓库 metadata/ 与 db/。
 """
 
 from __future__ import annotations
@@ -8,14 +9,45 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+import duckdb
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from querypilot.config import get_settings
+from querypilot.config import get_settings, ROOT_DIR
 from querypilot.api.onboarding_routes import router
 
 pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
+
+TABLE = "dwd_cust_risk_assess_d"
+RISK_CSV = ROOT_DIR / "data_sim" / f"{TABLE}.csv"
+
+
+@pytest.fixture(scope="module")
+def _risk_db_path(tmp_path_factory):
+    """真实库副本 + 导入风险表 CSV（模块级建一次，测试只读）。"""
+    db = tmp_path_factory.mktemp("db") / "risk_test.duckdb"
+    shutil.copy(get_settings().db_path, db)
+    con = duckdb.connect(str(db))
+    try:
+        con.execute(
+            f"CREATE TABLE {TABLE} (data_dt VARCHAR, pty_id VARCHAR, risk_lvl_cd VARCHAR,"
+            " risk_score INTEGER, assess_dt VARCHAR, expire_dt VARCHAR)"
+        )
+        con.execute(
+            f"INSERT INTO {TABLE} SELECT * FROM read_csv(?, header = true, sample_size = -1)",
+            [str(RISK_CSV)],
+        )
+    finally:
+        con.close()
+    return db
+
+
+@pytest.fixture()
+def risk_db(_risk_db_path: Path, monkeypatch) -> Path:
+    """把进程 DUCKDB_PATH 指到副本（get_settings 每次现读 env，立即生效）。"""
+    monkeypatch.setenv("DUCKDB_PATH", str(_risk_db_path))
+    return _risk_db_path
 
 
 @pytest.fixture()
@@ -27,10 +59,10 @@ def client(tmp_path: Path) -> TestClient:
 
 @pytest.fixture()
 def metadata_dir(tmp_path: Path) -> Path:
-    """元数据副本：去掉新表 YAML，模拟「表已入库、元数据未登记」状态。"""
+    """元数据副本：去掉新表 YAML（若有），模拟「表已入库、元数据未登记」状态。"""
     meta = tmp_path / "metadata"
-    shutil.copytree(Path("metadata"), meta)
-    meta.joinpath("tables", "dwd_cust_risk_assess_d.yaml").unlink(missing_ok=True)
+    shutil.copytree(ROOT_DIR / "metadata", meta)
+    meta.joinpath("tables", f"{TABLE}.yaml").unlink(missing_ok=True)
     return meta
 
 
@@ -97,8 +129,8 @@ def test_questionnaire_unknown_table_404(client: TestClient):
     not get_settings().db_path.exists(),
     reason="competition.duckdb not imported yet",
 )
-def test_questionnaire_returns_q1_to_q7(client: TestClient):
-    resp = client.get("/api/onboarding/questionnaire", params={"table": "dwd_cust_risk_assess_d"})
+def test_questionnaire_returns_q1_to_q7(client: TestClient, risk_db: Path):
+    resp = client.get("/api/onboarding/questionnaire", params={"table": TABLE})
     assert resp.status_code == 200
     body = resp.json()
     assert body["ok"]
@@ -124,10 +156,10 @@ def test_questionnaire_returns_q1_to_q7(client: TestClient):
     reason="competition.duckdb not imported yet",
 )
 class TestRegisterFlow:
-    def test_register_full_flow_ok(self, client: TestClient, metadata_dir: Path):
-        resp = client.get(
-            "/api/onboarding/questionnaire", params={"table": "dwd_cust_risk_assess_d"}
-        )
+    def test_register_full_flow_ok(
+        self, client: TestClient, metadata_dir: Path, risk_db: Path
+    ):
+        resp = client.get("/api/onboarding/questionnaire", params={"table": TABLE})
         body = _form_body(resp.json()["questionnaire"], metadata_dir)
 
         resp = client.post("/api/onboarding/register", json=body)
@@ -142,10 +174,10 @@ class TestRegisterFlow:
         for path in out["files_written"]:
             assert str(metadata_dir) in path
 
-    def test_register_duplicate_409(self, client: TestClient, metadata_dir: Path):
-        resp = client.get(
-            "/api/onboarding/questionnaire", params={"table": "dwd_cust_risk_assess_d"}
-        )
+    def test_register_duplicate_409(
+        self, client: TestClient, metadata_dir: Path, risk_db: Path
+    ):
+        resp = client.get("/api/onboarding/questionnaire", params={"table": TABLE})
         body = _form_body(resp.json()["questionnaire"], metadata_dir)
         assert client.post("/api/onboarding/register", json=body).status_code == 200
         resp = client.post("/api/onboarding/register", json=body)
@@ -162,14 +194,12 @@ class TestRegisterFlow:
         ids=["no-alias", "no-description", "no-cue-words"],
     )
     def test_register_missing_required_400(
-        self, client: TestClient, metadata_dir: Path, patch: dict
+        self, client: TestClient, metadata_dir: Path, risk_db: Path, patch: dict
     ):
-        resp = client.get(
-            "/api/onboarding/questionnaire", params={"table": "dwd_cust_risk_assess_d"}
-        )
+        resp = client.get("/api/onboarding/questionnaire", params={"table": TABLE})
         body = _form_body(resp.json()["questionnaire"], metadata_dir) | patch
         resp = client.post("/api/onboarding/register", json=body)
         assert resp.status_code == 400
         assert not resp.json()["ok"]
         # 校验失败时不应有任何落盘
-        assert not metadata_dir.joinpath("tables", "dwd_cust_risk_assess_d.yaml").exists()
+        assert not metadata_dir.joinpath("tables", f"{TABLE}.yaml").exists()
