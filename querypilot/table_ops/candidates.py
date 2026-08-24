@@ -1,11 +1,16 @@
-"""A3 业务键候选：纯机械发现新表与既有表的关联关系（logs/08 §三）。
+"""A3 业务键候选 + A4 枚举候选：纯机械发现新表的关联与字典配置（logs/08 §三）。
 
-两层信号：
+A3 两层信号：
   1. 名字信号 —— 键注册表由 join_graph edges 动态推导（不新增维护点）
   2. 值域信号 —— DISTINCT 值集包含性验证（解决「列名同 ≠ 语义同」，如 data_dt）
 
-置信度：containment >= 0.95 high / 0.30-0.95 medium（问卷强制确认）/ < 0.30 low（撞名）。
+置信度：同名命中 >= 0.70 high / 盲扫 >= 0.90 high / 0.30 起 medium（问卷强制确认）。
 日期列（全值 YYYYMMDD）按 no_default_data_dt 约定排除出键候选。
+
+A4 枚举候选（列值域 ↔ dim_public / static_enums 比对）：
+  - dict  —— 列值集 ⊆ dim_public 某code_type 的码集 → 建议 code_type_id + lookup
+  - static—— 列值集 ⊆ value_descriptors.static_enums 某枚举 → 建议 enum_ref
+  - new   —— 低基数非键非日期列未命中任何字典 → enum_values 骨架，含义由人填（Q6）
 """
 
 from __future__ import annotations
@@ -23,6 +28,10 @@ _HIGH_VALUE = 0.90  # 盲扫（值域）命中需高门槛，与撞名/撞值区
 _HIGH_NAME = 0.70  # 同名命中 + 值域验证双重信号，容忍事实表孤儿行（实测 tran 0.787 / fin 0.767）
 _MEDIUM = 0.30
 _BLIND_MIN_DISTINCT = 2  # 盲扫至少 2 个 distinct 值，避免常量列平凡包含
+
+# A4 枚举候选
+_ENUM_MEDIUM = 0.80  # 字典部分命中（有孤儿码）报 medium
+_ENUM_MAX_DISTINCT = 20  # 「新枚举」候选的基数上限：超过则视为普通文本/数值列
 
 # 已知日期不对齐的表：与它们 join 的边建议挂 no_default_data_dt（域知识）
 _DATE_MISALIGNED_TABLES = frozenset({"ads_cust_info_d", "dim_branch"})
@@ -77,6 +86,22 @@ class KeyCandidate:
     match_type: str  # name（同名命中）/ value（值域盲扫命中）
     reason: str
     suggested_edge: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class EnumCandidate:
+    """一条枚举/字典候选（含建议的表 YAML 列字段）。"""
+
+    column: str
+    kind: str  # dict（dim_public）/ static（static_enums）/ new（待人工填含义）
+    match_key: str  # code_type_id / static枚举名 / ""
+    label: str  # 字典业务名（如 性别），new 为空
+    distinct_count: int
+    containment: float  # 列值集对码集的包含率
+    confidence: str  # high / medium
+    reason: str
+    value_meanings: dict[str, str]  # 值 → 含义（new 候选含义为空串，待人填）
+    suggested_column: dict[str, Any] = field(default_factory=dict)
 
 
 def build_key_registry(metadata: MetadataBundle | None = None) -> list[KeyTarget]:
@@ -350,8 +375,204 @@ def key_report(
     return "\n".join(lines)
 
 
+# ---------- A4 枚举候选（logs/08 §三 A4：distinct 探数 ↔ 字典值域比对） ----------
+
+
+def _enum_classify(containment: float, distinct_count: int) -> str:
+    """全量命中且 >= 2 个值才 high；单值平凡包含 / 孤儿码只报 medium。"""
+    if containment == 1.0 and distinct_count >= 2:
+        return "high"
+    return "medium"
+
+
+def enum_candidates(
+    table: str,
+    *,
+    con: duckdb.DuckDBPyConnection | None = None,
+    metadata: MetadataBundle | None = None,
+) -> list[EnumCandidate]:
+    """产出 ``table`` 的枚举/字典候选（纯机械，零 LLM）。
+
+    字典码集直接查 dim_public（不依赖 metadata 的 load_db_codes 开关）；
+    标签与静态枚举来自 value_descriptors.yaml。
+    """
+    from querypilot.db import get_connection
+
+    if metadata is None:
+        from querypilot.metadata_engine import load_metadata
+
+        metadata = load_metadata(load_db_codes=False)
+
+    own_con = con is None
+    con = con or get_connection(read_only=True)
+    try:
+        profiles = _profile_columns(con, table)
+        codes_by_type: dict[str, dict[str, str]] = {}
+        for ctid, code, describe in con.execute(
+            'SELECT code_type_id, code, "describe" FROM dim_public'
+        ).fetchall():
+            codes_by_type.setdefault(str(ctid), {})[str(code)] = str(describe)
+        labels = {cid: m.label for cid, m in metadata.values.code_types.items()}
+        labels.update(metadata.values.unused_code_types)
+        static_enums = metadata.values.static_enums
+
+        candidates: list[EnumCandidate] = []
+
+        def _add(
+            col: str,
+            kind: str,
+            match_key: str,
+            label: str,
+            profile: ColumnProfile,
+            containment: float,
+            reason: str,
+            meanings: dict[str, str],
+        ) -> None:
+            if kind == "dict":
+                suggested: dict[str, Any] = {"code_type_id": match_key, "lookup": "dim_public"}
+            elif kind == "static":
+                suggested = {"enum_ref": match_key}
+            else:
+                suggested = {"enum_values": dict(meanings)}
+            candidates.append(
+                EnumCandidate(
+                    column=col,
+                    kind=kind,
+                    match_key=match_key,
+                    label=label,
+                    distinct_count=profile.distinct_count,
+                    containment=round(containment, 4),
+                    confidence=_enum_classify(containment, profile.distinct_count),
+                    reason=reason,
+                    value_meanings=meanings,
+                    suggested_column=suggested,
+                )
+            )
+
+        for col, profile in profiles.items():
+            if profile.is_date or profile.is_unique or profile.distinct_count == 0:
+                continue  # 日期/键/全空列不做枚举候选
+            vals = profile.distinct_values
+
+            # 1) dim_public 字典：列值集对码集的包含率
+            dict_hit = False
+            for ctid, codes in sorted(codes_by_type.items()):
+                overlap = len(vals & codes.keys())
+                containment = overlap / len(vals)
+                if containment < _ENUM_MEDIUM:
+                    continue
+                label = labels.get(ctid, "")
+                _add(
+                    col,
+                    "dict",
+                    ctid,
+                    label,
+                    profile,
+                    containment,
+                    f"值集 {overlap}/{len(vals)} 落入 dim_public 字典 {label}({ctid})",
+                    {v: codes.get(v, "") for v in sorted(vals)},
+                )
+                dict_hit = True
+            if dict_hit:
+                continue
+
+            # 2) 静态枚举（value_descriptors.static_enums）
+            static_hit = False
+            for name, pairs in sorted(static_enums.items()):
+                keys = set(pairs)
+                overlap = len(vals & keys)
+                containment = overlap / len(vals)
+                if containment < _ENUM_MEDIUM:
+                    continue
+                _add(
+                    col,
+                    "static",
+                    name,
+                    name,
+                    profile,
+                    containment,
+                    f"值集 {overlap}/{len(vals)} 命中静态枚举 {name}",
+                    {v: pairs.get(v, "") for v in sorted(vals)},
+                )
+                static_hit = True
+            if static_hit:
+                continue
+
+            # 3) 未命中任何字典的低基数列 → 新枚举骨架，含义由人填（问卷 Q6）
+            if profile.distinct_count <= _ENUM_MAX_DISTINCT:
+                meanings = {v: "" for v in sorted(vals)}
+                _add(
+                    col,
+                    "new",
+                    "",
+                    "",
+                    profile,
+                    0.0,
+                    f"低基数（{profile.distinct_count} 个值）且未命中任何字典，"
+                    "需人工确认是否枚举并补含义",
+                    meanings,
+                )
+
+        order = {"high": 0, "medium": 1}
+        candidates.sort(key=lambda c: (order[c.confidence], c.kind, c.column))
+        return candidates
+    finally:
+        if own_con:
+            con.close()
+
+
+def enum_report(
+    table: str,
+    *,
+    con: duckdb.DuckDBPyConnection | None = None,
+    metadata: MetadataBundle | None = None,
+) -> str:
+    """人类可读的枚举候选报告（问卷 Q6 的机械底稿）。"""
+    candidates = enum_candidates(table, con=con, metadata=metadata)
+
+    lines = [f"表 {table} 枚举候选报告", "=" * 60]
+    if not candidates:
+        lines.append("未发现枚举/字典候选。")
+        return "\n".join(lines)
+    lines.append(f"{'置信':6} {'列':18} {'类型':7} {'字典/枚举':18} 值域")
+    lines.append("-" * 100)
+    for c in candidates:
+        shown = ", ".join(
+            f"{v}={m}" if m else v for v, m in list(c.value_meanings.items())[:6]
+        )
+        suffix = " ..." if len(c.value_meanings) > 6 else ""
+        key = c.match_key if c.kind != "new" else "(新)"
+        lines.append(
+            f"{c.confidence:6} {c.column:18} {c.kind:7} {key:18} {shown}{suffix}"
+        )
+    lines.append("")
+    lines.append("建议列配置（高置信项）:")
+    for c in candidates:
+        if c.confidence == "high":
+            lines.append(f"  - {table}.{c.column}: {c.suggested_column}")
+    return "\n".join(lines)
+
+
+def _main(argv: list[str] | None = None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="python -m querypilot.table_ops.candidates",
+        description="新表登记机械候选报告（A3 键 + A4 枚举）",
+    )
+    parser.add_argument("table", help="表名（需已导入 DuckDB）")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--keys-only", action="store_true", help="只输出键候选报告")
+    group.add_argument("--enums-only", action="store_true", help="只输出枚举候选报告")
+    args = parser.parse_args(argv)
+
+    if not args.enums_only:
+        print(key_report(args.table))
+        print()
+    if not args.keys_only:
+        print(enum_report(args.table))
+    return 0
+
+
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("用法: python -m querypilot.table_ops.candidates <表名>")
-        sys.exit(1)
-    print(key_report(sys.argv[1]))
+    sys.exit(_main())

@@ -1,4 +1,4 @@
-"""A3 键候选生成器测试（含对 0da90af 手写元数据的逆向验证）。"""
+"""A3 键候选 / A4 枚举候选生成器测试（含对手写元数据的逆向验证）。"""
 
 from __future__ import annotations
 
@@ -10,6 +10,8 @@ from querypilot.table_ops.candidates import (
     ColumnProfile,
     build_key_registry,
     _classify,
+    _enum_classify,
+    enum_candidates,
     key_candidates,
 )
 
@@ -136,3 +138,92 @@ def test_machine_rediscovers_every_graph_edge(edge_id, metadata):
     assert match, f"{edge_id}: 机器未发现边 {edge.from_table}↔{edge.to_table} on {left_col}"
     best = max(match, key=lambda c: c.containment)
     assert best.confidence == "high", f"{edge_id}: 置信度不足 ({best.confidence}, {best.containment})"
+
+
+# ---------- A4 枚举候选 ----------
+
+
+def test_enum_classify_thresholds():
+    # 全量命中且 >= 2 个值才 high；单值平凡包含只报 medium
+    assert _enum_classify(1.0, 2) == "high"
+    assert _enum_classify(1.0, 1) == "medium"
+    assert _enum_classify(0.9, 5) == "medium"
+
+
+@pytest.mark.skipif(
+    not get_settings().db_path.exists(),
+    reason="competition.duckdb not imported yet",
+)
+class TestEnumReverseCheck:
+    """机器从裸表跑出的枚举候选应覆盖人工写的全部字典/枚举配置。"""
+
+    @pytest.mark.parametrize(
+        "code_type_id",
+        ["100", "200", "500", "600", "700"],
+    )
+    def test_rediscovers_dim_public_code_types(self, metadata, code_type_id):
+        """value_descriptors.code_types 的 5 个 column_refs 应全部被机器复原。"""
+        refs = metadata.values.code_types[code_type_id].column_refs
+        assert refs, f"{code_type_id} 无 column_refs"
+        for ref in refs:
+            cands = enum_candidates(ref.table, metadata=metadata)
+            match = [
+                c
+                for c in cands
+                if c.column == ref.column and c.kind == "dict" and c.match_key == code_type_id
+            ]
+            assert match, f"{code_type_id}: {ref.table}.{ref.column} 未命中字典候选"
+            best = max(match, key=lambda c: c.containment)
+            assert best.confidence == "high", f"{code_type_id}: {best.confidence}"
+            assert best.suggested_column == {
+                "code_type_id": code_type_id,
+                "lookup": "dim_public",
+            }
+            # 含义应从 dim_public 解析出来（如性别 5000002=男）
+            assert all(v for v in best.value_meanings.values())
+
+    @pytest.mark.parametrize(
+        "table,column,enum_ref,expect_high",
+        [
+            ("dwd_cust_tran_d", "sys_source", "sys_source", True),
+            ("dwd_cust_hold_d", "sys_source", "sys_source", True),
+            ("dws_cust_fin_d", "sys_source", "sys_source", True),
+            ("dwd_cust_hold_d", "ccy", "ccy", True),
+            ("dwd_cust_tran_d", "ccy", "ccy", False),  # 单值平凡包含 → medium
+            ("ads_cust_info_d", "cust_type", "cust_type", False),  # 单值 → medium
+        ],
+    )
+    def test_rediscovers_static_enum_refs(self, metadata, table, column, enum_ref, expect_high):
+        cands = enum_candidates(table, metadata=metadata)
+        match = [
+            c for c in cands if c.column == column and c.kind == "static" and c.match_key == enum_ref
+        ]
+        assert match, f"{table}.{column} 未命中静态枚举 {enum_ref}"
+        best = max(match, key=lambda c: c.containment)
+        assert (best.confidence == "high") is expect_high
+        assert best.suggested_column == {"enum_ref": enum_ref}
+
+    def test_new_enum_skeleton_for_mgr_title(self, metadata):
+        """dim_mgr_info.mgr_title（3 个值、无字典）应产出待填含义的新枚举骨架。"""
+        cands = enum_candidates("dim_mgr_info", metadata=metadata)
+        match = [c for c in cands if c.column == "mgr_title"]
+        assert match and match[0].kind == "new"
+        c = match[0]
+        assert c.confidence == "medium"
+        assert set(c.value_meanings) == {"VP", "高级经理", "经理"}
+        assert all(m == "" for m in c.value_meanings.values())
+        assert c.suggested_column == {
+            "enum_values": {"VP": "", "高级经理": "", "经理": ""}
+        }
+
+    def test_no_dict_false_positive_on_text_columns(self, metadata):
+        """自由文本/维度/键/日期列不应产生 dict/static 候选。
+
+        「new」候选允许出现（如 prov_name/city_name）——机械层无法判断
+        自释义文本是否需要字典，交由问卷 Q6 人工确认，默认 medium。
+        """
+        cands = enum_candidates("ads_cust_info_d", metadata=metadata)
+        no_dict = {"prov_name", "city_name", "name", "org_id", "pty_id", "data_dt"}
+        for c in cands:
+            if c.column in no_dict:
+                assert c.kind == "new", f"{c.column} 误报 {c.kind} 候选"
