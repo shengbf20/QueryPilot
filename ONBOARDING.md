@@ -1,18 +1,22 @@
 # 新表接入操作手册（拿到表 → 进数据库 → 元数据生效）
 
-> 面向操作者的一步步手册。全程只需：放 CSV、登记一处、跑命令、答问卷。
-> 机器自动完成：结构发现 → 候选生成 → 落盘 → 注册 → 校验 → 回归（logs/12）。
+> 面向操作者的一步步手册。全程只需：放 CSV、跑命令、答问卷。
+> 机器自动完成：登记 → 导入 → 结构发现 → 候选生成 → 落盘 → 注册 → 校验 → 回归（logs/12）。
+>
+> **占位符约定**：命令中 `[name]` = 表名（如 `dwd_cust_sign_d`），`[file]` = CSV 文件名，
+> `[question]` = 冒烟问句，替换后执行。
 >
 > 环境约定：Windows / PowerShell（命令逐行执行，不要用 `&&` 串联）；
-> 所有 python 命令加 `PYTHONIOENCODING=utf-8` 前缀避免中文乱码。
+> 乱码时先执行一次 `$env:PYTHONIOENCODING="utf-8"`（本会话内后续命令均生效），
+> 或按示例写成 `;` 串联的单行命令。
 
 ---
 
 ## 总览
 
 ```
-① 放 CSV           ② 登记 import_data.py      ③ 重建 DuckDB
-   (data_sim/)         (TABLES + DDL)             (或单表轻量导入)
+① 放 CSV           ② 登记 + 单表导入           ③ 全量重建（备用）
+   (data_sim/)         (add_table.py --import)
                                               ↓
 ④ 入库验证          ⑤ 生成问卷                  ⑥ 答问卷落盘
    discover            questionnaire               register
@@ -41,18 +45,17 @@
 示例：
 
 ```powershell
-# 假设拿到一张客户签约表 dwd_cust_sign_d.csv（1 个文件）
-Copy-Item .\dwd_cust_sign_d.csv .\data_sim\
+Copy-Item .\[file] .\data_sim\
 ```
 
 ---
 
-## ② 登记 import_data.py（自动）
+## ② 登记 import_data.py + 单表导入（自动）
 
-一条命令完成登记（类型自动推断，先在内存库试导入验证，再写入）：
+一条命令完成登记与导入（类型自动推断，先在内存库试导入验证，再写入并导入现有库）：
 
 ```powershell
-PYTHONIOENCODING=utf-8 python scripts/add_table.py data_sim/dwd_cust_sign_d.csv --import
+$env:PYTHONIOENCODING="utf-8"; python scripts/add_table.py data_sim/[file] --import
 ```
 
 脚本自动完成：
@@ -75,12 +78,12 @@ PYTHONIOENCODING=utf-8 python scripts/add_table.py data_sim/dwd_cust_sign_d.csv 
 ## ③ 导入 DuckDB
 
 > ② 已带 `--import` 的话本步已完成（单表导入），可直接跳到 ④；
-> 需要全量重建时仍用方式 A。
+> 需要全量重建时用下面的命令。
 
-### 方式 A：全量重建（标准路径）
+### 全量重建（标准路径）
 
 ```powershell
-PYTHONIOENCODING=utf-8 python scripts/import_data.py
+$env:PYTHONIOENCODING="utf-8"; python scripts/import_data.py
 ```
 
 ⚠️ **重建会先删除整个 `db/competition.duckdb` 再全量导入所有表**，因此：
@@ -93,16 +96,12 @@ PYTHONIOENCODING=utf-8 python scripts/import_data.py
 导入完成，共 11 张表，832,067 行。
 ```
 
-### 方式 B：单表轻量导入（不动其他表）
-
-即 ② 的 `--import`（`scripts/add_table.py` 内置），不再需要手写 python -c。
-
 ---
 
 ## ④ 入库验证（A1 结构画像）
 
 ```powershell
-PYTHONIOENCODING=utf-8 python -m querypilot.table_ops.discover dwd_cust_sign_d
+$env:PYTHONIOENCODING="utf-8"; python -m querypilot.table_ops.discover [name]
 ```
 
 核对输出：行数对不对、类型对不对、主键候选/常量列/日期列是否符合预期。
@@ -113,7 +112,7 @@ PYTHONIOENCODING=utf-8 python -m querypilot.table_ops.discover dwd_cust_sign_d
 ## ⑤ 生成登记问卷（A9：候选 + 默认答案）
 
 ```powershell
-PYTHONIOENCODING=utf-8 python -m querypilot.table_ops.cli questionnaire dwd_cust_sign_d
+$env:PYTHONIOENCODING="utf-8"; python -m querypilot.table_ops.cli questionnaire [name]
 ```
 
 输出 Q1-Q7 业务问题和机械候选底稿（Q5 会列出值域验证过的 join 边候选及置信度，
@@ -124,14 +123,14 @@ Q6 列出枚举/字典候选）。**逐项核对**，这些就是 ⑥ 要提供�
 ## ⑥ 回答问卷，一条命令落盘 + 校验 + 回归
 
 ```powershell
-PYTHONIOENCODING=utf-8 python -m querypilot.table_ops.cli register dwd_cust_sign_d --yes `
-  --alias 客户签约表 `
-  --description "客户签约关系（签约类型与签约日期）。" `
-  --granularity 客户级 `
-  --col-desc pty_id=客户号 --col-desc sign_type=签约类型 --col-desc sign_date=签约日期 --col-desc data_dt=日期 `
-  --edge pty_id:ads_cust_info_d.pty_id:fact:no_default_data_dt `
-  --cue 签约,签约关系 `
-  --question "有多少客户签了约"
+$env:PYTHONIOENCODING="utf-8"; python -m querypilot.table_ops.cli register [name] --yes `
+  --alias <表别名> `
+  --description "<一句话表用途>" `
+  --granularity <粒度，如 客户级> `
+  --col-desc <列1>=<含义> --col-desc <列2>=<含义> `
+  --edge <列>:<目标表>.<目标列>:<类型>:<规则> `
+  --cue <触发词1>,<触发词2> `
+  --question "[question]"
 ```
 
 （PowerShell 用反引号 `` ` `` 续行；每列都要给 `--col-desc`，否则 A7 校验失败。）
@@ -157,10 +156,10 @@ PYTHONIOENCODING=utf-8 python -m querypilot.table_ops.cli register dwd_cust_sign
 
 ```powershell
 # 剪枝冒烟（确定性，不调 LLM）
-PYTHONIOENCODING=utf-8 python -m querypilot.table_ops.validate dwd_cust_sign_d --question "有多少客户签了约"
+$env:PYTHONIOENCODING="utf-8"; python -m querypilot.table_ops.validate [name] --question "[question]"
 
 # 端到端提问（调 LLM，需 .env 的 API key）
-PYTHONIOENCODING=utf-8 python -m querypilot.cli ask "签约客户有多少人"
+$env:PYTHONIOENCODING="utf-8"; python -m querypilot.cli ask "[question]"
 ```
 
 若 serve / chat 正在运行：**需重启进程**才能加载新元数据（元数据在进程启动时加载并缓存）。
@@ -171,12 +170,12 @@ PYTHONIOENCODING=utf-8 python -m querypilot.cli ask "签约客户有多少人"
 
 | 现象 | 原因与处理 |
 |------|-----------|
-| `table not found in database` | 没跑 ③，或表名/DDL 拼错；用 ④ 先验证入库 |
+| `table not found in database` | 没跑 ②/③，或表名/DDL 拼错；用 ④ 先验证入库 |
 | 重建报 DuckDB 文件锁错误 | serve/chat/评测进程还开着，关掉再跑 |
 | A7 报 `missing description` | ⑥ 漏了某列的 `--col-desc`（每列必填） |
 | register 报 `KeyError: 目标表` | 注册顺序反了：先注册边指向的维表 |
 | 剪枝冒烟不命中 | 冒烟问句要含 `--cue` 里的触发词（问法需域内典型，如「服务经理名下有多少客户」） |
-| CSV 中文乱码 | 文件需 UTF-8；命令加 `PYTHONIOENCODING=utf-8` |
+| CSV 中文乱码 | 文件需 UTF-8；命令前缀 `$env:PYTHONIOENCODING="utf-8"; ` |
 | prompt 里枚举显示空 | Q6 的 new 枚举没回填含义，`--enum-meaning` 提供 |
 
 ---
