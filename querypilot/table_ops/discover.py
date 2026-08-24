@@ -1,8 +1,12 @@
-"""A1 结构自动发现：information_schema + 每列 DISTINCT 统计 → 表结构画像（logs/08 §三）。
+"""A1 结构自动发现 + A2 YAML 骨架生成（logs/08 §三）。
 
-纯机械输出，供 A2 骨架生成与问卷（Q1 用途 / Q3 粒度 / Q4 列含义）做底稿：
+A1 纯机械输出表结构画像，供问卷（Q1 用途 / Q3 粒度 / Q4 列含义）做底稿：
   - 列级：类型 / 空值数 / 基数 / 唯一性 / 常量列 / 日期列
   - 表级：行数 / 层次推断（前缀约定）/ 主键候选（单列唯一，组合键交 A3 + 人工）
+
+A2 在 A1 之上合并 A3 键候选、A4 枚举候选，产出表 YAML 骨架：
+物理字段（table/layer/type/format/code_type_id/enum_ref/…）机器填好，
+语义字段（alias/description/usage/aliases/enum 含义）留空待问卷回填。
 """
 
 from __future__ import annotations
@@ -12,8 +16,16 @@ from dataclasses import dataclass
 from typing import Any
 
 import duckdb
+import yaml
 
-from querypilot.table_ops.candidates import ColumnProfile, _profile_columns
+from querypilot.table_ops.candidates import (
+    ColumnProfile,
+    EnumCandidate,
+    _profile_columns,
+    build_key_registry,
+    enum_candidates,
+    key_candidates,
+)
 
 # 数仓前缀约定：表名第一段 → layer
 _LAYER_PREFIXES = {"dim", "dwd", "dws", "ads", "ods"}
@@ -183,18 +195,151 @@ def discover_report(table: str, *, con: duckdb.DuckDBPyConnection | None = None)
     return "\n".join(lines)
 
 
+# ---------- A2 YAML 骨架生成（logs/08 §三 A2：物理部分机器填，描述留空） ----------
+
+
+def _best_enum_candidate(cands: list[EnumCandidate]) -> EnumCandidate | None:
+    """每列取最优枚举候选：dict > static > new，同 kind 取包含率高者。"""
+    if not cands:
+        return None
+    rank = {"dict": 0, "static": 1, "new": 2}
+    return min(cands, key=lambda c: (rank[c.kind], -c.containment))
+
+
+def _suggest_primary_key(
+    profile: TableProfile,
+    known_key_columns: set[str],
+) -> list[str]:
+    """主键建议：单列唯一候选中优先已知业务键（registry 列），否则取首个。
+
+    注意：常量快照日是否入主键属业务口径（dim_branch 入、ads 不入），
+    机械不可判定——核心唯一键之外的部分交人工（问卷 Q3，notes 有提示）。
+    无任何唯一候选的明细表（如 tran）返回空列表交人工。
+    """
+    candidates = profile.primary_key_candidates
+    if not candidates:
+        return []
+    for name in candidates:
+        if name in known_key_columns:
+            return [name]
+    return candidates[:1]
+
+
+def build_skeleton(
+    table: str,
+    *,
+    con: duckdb.DuckDBPyConnection | None = None,
+    metadata: Any = None,
+) -> dict[str, Any]:
+    """生成表 YAML 骨架（A1 结构 + A3 键 + A4 枚举，纯机械）。
+
+    返回可直接 ``yaml.safe_dump`` 的 dict，字段顺序与 loader 读取顺序一致。
+    语义字段（alias/description/usage/aliases/枚举含义）留空，由问卷回填。
+    """
+    from querypilot.db import get_connection
+
+    if metadata is None:
+        from querypilot.metadata_engine import load_metadata
+
+        metadata = load_metadata(load_db_codes=False)
+
+    own_con = con is None
+    con = con or get_connection(read_only=True)
+    try:
+        profile = discover_table(table, con=con)
+        # 键候选列（A3）不产 "new" 枚举骨架——键列值域是标识符，不是待解释枚举
+        key_cols = {c.column for c in key_candidates(table, con=con, metadata=metadata)}
+        enums = enum_candidates(table, con=con, metadata=metadata, key_columns=key_cols)
+    finally:
+        if own_con:
+            con.close()
+
+    enum_by_col: dict[str, list[EnumCandidate]] = {}
+    for c in enums:
+        enum_by_col.setdefault(c.column, []).append(c)
+
+    known_keys = {t.column for t in build_key_registry(metadata)}
+    pk = _suggest_primary_key(profile, known_keys)
+
+    columns: list[dict[str, Any]] = []
+    for cs in profile.columns:
+        col: dict[str, Any] = {
+            "name": cs.name,
+            "type": cs.db_type,
+            "description": "",
+            "aliases": [],
+        }
+        if cs.is_date:
+            col["format"] = "YYYYMMDD"
+        best = _best_enum_candidate(enum_by_col.get(cs.name, []))
+        if best is not None:
+            if best.kind == "dict":
+                col["code_type_id"] = best.match_key
+                col["lookup"] = "dim_public"
+            elif best.kind == "static":
+                col["enum_ref"] = best.match_key
+            else:  # new：值域骨架已列出，含义待问卷 Q6 填空
+                col["enum_values"] = {v: "" for v in best.value_meanings}
+        columns.append(col)
+
+    notes: list[str] = []
+    for name in profile.constant_columns:
+        cs = profile.get_column(name)
+        if cs is not None and cs.is_date:
+            value = next(iter(cs.profile.distinct_values))
+            notes.append(f"{name} 固定为 {value}（快照日）")
+            if pk:
+                notes.append(f"主键是否含快照日 {name} 需人工确认（问卷 Q3）")
+    if not pk:
+        notes.append("无单列唯一键：组合主键需人工确认（问卷 Q3）")
+
+    return {
+        "table": table,
+        "alias": "",
+        "layer": profile.suggested_layer,
+        "description": "",
+        "primary_key": pk,
+        "usage": [],
+        "notes": notes,
+        "columns": columns,
+    }
+
+
+def render_skeleton_yaml(
+    table: str,
+    *,
+    con: duckdb.DuckDBPyConnection | None = None,
+    metadata: Any = None,
+) -> str:
+    """渲染 YAML 骨架文本（不落盘；落盘由问卷确认后的 A5/A6 register 负责）。"""
+    skeleton = build_skeleton(table, con=con, metadata=metadata)
+    return yaml.safe_dump(
+        skeleton,
+        allow_unicode=True,
+        sort_keys=False,
+        default_flow_style=False,
+    )
+
+
 def _main(argv: list[str] | None = None) -> int:
     import argparse
 
     parser = argparse.ArgumentParser(
         prog="python -m querypilot.table_ops.discover",
-        description="新表结构画像（A1 结构自动发现）",
+        description="新表结构画像与 YAML 骨架（A1 结构发现 + A2 骨架生成）",
     )
     parser.add_argument("table", help="表名（需已导入 DuckDB）")
-    parser.add_argument("--json", action="store_true", help="输出 JSON（供 A2 骨架生成）")
+    parser.add_argument("--json", action="store_true", help="输出 JSON 画像（A1）")
+    parser.add_argument(
+        "--skeleton",
+        action="store_true",
+        help="输出表 YAML 骨架（A2，语义字段留空待问卷）",
+    )
     args = parser.parse_args(argv)
 
-    if args.json:
+    if args.skeleton:
+        print(render_skeleton_yaml(args.table))
+    elif args.json:
         import json
 
         print(json.dumps(discover_table(args.table).to_dict(), ensure_ascii=False, indent=2))

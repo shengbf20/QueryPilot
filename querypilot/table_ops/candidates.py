@@ -390,11 +390,14 @@ def enum_candidates(
     *,
     con: duckdb.DuckDBPyConnection | None = None,
     metadata: MetadataBundle | None = None,
+    key_columns: set[str] | None = None,
 ) -> list[EnumCandidate]:
     """产出 ``table`` 的枚举/字典候选（纯机械，零 LLM）。
 
     字典码集直接查 dim_public（不依赖 metadata 的 load_db_codes 开关）；
     标签与静态枚举来自 value_descriptors.yaml。
+    ``key_columns``（A3 键候选的列）中的列不再产 "new" 枚举候选——
+    键列的值域是标识符（如 mgr_id），不是待解释的枚举。
     """
     from querypilot.db import get_connection
 
@@ -499,6 +502,8 @@ def enum_candidates(
                 continue
 
             # 3) 未命中任何字典的低基数列 → 新枚举骨架，含义由人填（问卷 Q6）
+            if key_columns and col in key_columns:
+                continue  # 键列（A3 候选）不是枚举
             if profile.distinct_count <= _ENUM_MAX_DISTINCT:
                 meanings = {v: "" for v in sorted(vals)}
                 _add(
@@ -526,9 +531,10 @@ def enum_report(
     *,
     con: duckdb.DuckDBPyConnection | None = None,
     metadata: MetadataBundle | None = None,
+    key_columns: set[str] | None = None,
 ) -> str:
     """人类可读的枚举候选报告（问卷 Q6 的机械底稿）。"""
-    candidates = enum_candidates(table, con=con, metadata=metadata)
+    candidates = enum_candidates(table, con=con, metadata=metadata, key_columns=key_columns)
 
     lines = [f"表 {table} 枚举候选报告", "=" * 60]
     if not candidates:
@@ -570,7 +576,9 @@ def _main(argv: list[str] | None = None) -> int:
         print(key_report(args.table))
         print()
     if not args.keys_only:
-        print(enum_report(args.table))
+        # 键候选列不再报 "new" 枚举（键列值域是标识符，不是待解释枚举）
+        key_cols = {c.column for c in key_candidates(args.table)}
+        print(enum_report(args.table, key_columns=key_cols))
     return 0
 
 
