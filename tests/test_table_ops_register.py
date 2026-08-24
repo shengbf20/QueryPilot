@@ -286,3 +286,47 @@ def test_append_column_ref_missing_block_raises(tmp_path: Path):
     p.write_text('code_types:\n  "999":\n    label: 无引用块\n', encoding="utf-8")
     with pytest.raises(ValueError, match="column_refs not found"):
         _append_column_ref(p, "999", "t", "c")
+
+
+# ---------- A6 注册表同步验证 ----------
+
+
+from querypilot.table_ops.register import verify_registration  # noqa: E402
+
+
+@requires_db
+@pytest.mark.parametrize("table", ["dim_mgr_info", "dwd_cust_mgr_rel_d"])
+def test_sync_report_ok_on_real_metadata(table):
+    """逆向验证：手写注册的 sim 表在真实元数据上全项同步。"""
+    report = verify_registration(table)
+    assert report.ok, [c.name for c in report.failed]
+
+
+@requires_db
+def test_sync_report_fails_before_registration(metadata_copy: Path):
+    """未注册状态：loader / join_graph / L1 白名单均不收录。"""
+    report = verify_registration("dim_mgr_info", metadata_dir=metadata_copy)
+    assert not report.ok
+    failed_names = {c.name for c in report.failed}
+    assert "loader 目录扫描发现" in failed_names
+    assert "join_graph 表注册" in failed_names
+    assert "L1 表白名单收录" in failed_names
+
+
+@requires_db
+def test_sync_report_ok_after_registration(metadata_copy: Path):
+    """A5 落盘 → A6 全项同步（零代码改动闭环）。"""
+    register_table(mgr_answers(), metadata_dir=metadata_copy)
+    register_table(rel_answers(), metadata_dir=metadata_copy)
+    for table in ("dim_mgr_info", "dwd_cust_mgr_rel_d"):
+        report = verify_registration(table, metadata_dir=metadata_copy)
+        assert report.ok, [c.name for c in report.failed]
+        assert "全部同步生效" in report.report()
+
+
+def test_sync_report_unknown_table(tmp_path: Path):
+    copy = tmp_path / "metadata"
+    shutil.copytree(get_settings().metadata_dir, copy)
+    report = verify_registration("no_such_table", metadata_dir=copy)
+    assert not report.ok
+    assert report.failed[0].name == "loader 目录扫描发现"

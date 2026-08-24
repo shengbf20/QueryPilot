@@ -26,6 +26,40 @@ _FACT_LAYERS = frozenset({"dwd", "dws"})
 
 
 @dataclass
+class SyncCheck:
+    """单项注册表同步检查。"""
+
+    name: str
+    ok: bool
+    detail: str = ""
+
+
+@dataclass
+class RegistrationSyncReport:
+    """A6 注册表同步报告：新表被所有动态注册表自动接纳，零代码改动。"""
+
+    table: str
+    checks: list[SyncCheck] = field(default_factory=list)
+
+    @property
+    def ok(self) -> bool:
+        return all(c.ok for c in self.checks)
+
+    @property
+    def failed(self) -> list[SyncCheck]:
+        return [c for c in self.checks if not c.ok]
+
+    def report(self) -> str:
+        lines = [f"表 {self.table} 注册表同步报告", "=" * 60]
+        for c in self.checks:
+            mark = "✓" if c.ok else "✗"
+            extra = f"  ({c.detail})" if c.detail and not c.ok else ""
+            lines.append(f"  {mark} {c.name}{extra}")
+        lines.append("结论: " + ("全部同步生效，零代码改动" if self.ok else f"{len(self.failed)} 项未同步"))
+        return "\n".join(lines)
+
+
+@dataclass
 class RegistrationAnswers:
     """新表登记问卷（Q1-Q7）确认后的答案。"""
 
@@ -311,3 +345,83 @@ def register_table(
         value_descriptors_insert="".join(vd_lines),
         dry_run=False,
     )
+
+
+# ---------- A6 注册表同步验证 ----------
+
+
+def verify_registration(
+    table: str,
+    *,
+    metadata_dir: Path | None = None,
+) -> RegistrationSyncReport:
+    """注册后同步检查：新表应被全部动态注册表自动接纳（目录扫描 / join_graph /
+    pruning 配置 / L1 白名单 / prompt 渲染），全程零代码改动。
+    """
+    from querypilot.metadata_engine import discover_table_names, load_all_tables
+    from querypilot.metadata_engine.bundle import load_metadata_uncached
+    from querypilot.metadata_engine.join_graph_loader import load_join_graph
+    from querypilot.metadata_engine.pruning_config import load_pruning_config
+    from querypilot.safety.l1_ast import build_column_catalog
+
+    metadata_dir = metadata_dir or get_settings().metadata_dir
+    tables_dir = metadata_dir / "tables"
+    report = RegistrationSyncReport(table=table)
+
+    # 1. loader 目录扫描发现
+    names = discover_table_names(tables_dir)
+    report.checks.append(SyncCheck("loader 目录扫描发现", table in names))
+
+    # 2. 表 YAML 可解析
+    tables = load_all_tables(tables_dir)
+    meta = tables.get(table)
+    report.checks.append(
+        SyncCheck("表 YAML 可解析", meta is not None, f"{table}.yaml 缺失或解析失败")
+    )
+
+    # 3. join_graph 注册（表 + 关联边两端齐全）
+    graph = load_join_graph(metadata_dir / "join_graph.yaml")
+    in_graph = table in graph.tables
+    report.checks.append(SyncCheck("join_graph 表注册", in_graph, "tables 块缺该表"))
+    if in_graph:
+        broken = [
+            e.id
+            for e in graph.edges.values()
+            if table in (e.from_table, e.to_table)
+            and (e.from_table not in tables or e.to_table not in tables)
+        ]
+        report.checks.append(
+            SyncCheck("join_graph 边两端均已注册", not broken, f"边 {broken} 引用未注册表")
+        )
+
+    # 4. pruning 配置可加载且身份正确（事实表应在 fact_tables）
+    config = load_pruning_config(metadata_dir / "pruning.yaml")
+    is_fact = meta is not None and meta.layer in _FACT_LAYERS
+    if is_fact:
+        report.checks.append(
+            SyncCheck("pruning fact_tables 收录", table in config.fact_tables)
+        )
+    else:
+        report.checks.append(SyncCheck("pruning 配置可加载", True))
+
+    # 5. L1 白名单由 catalog 派生（catalog 来自表 YAML 目录扫描）
+    bundle = load_metadata_uncached(
+        tables_dir=tables_dir,
+        join_graph_path=metadata_dir / "join_graph.yaml",
+        value_config_path=metadata_dir / "value_descriptors.yaml",
+        load_db_codes=False,
+    )
+    catalog = build_column_catalog(bundle)
+    report.checks.append(
+        SyncCheck("L1 表白名单收录", table in catalog, "allowlist 由目录扫描派生，不应缺失")
+    )
+
+    # 6. prompt 渲染（最终进入 LLM 的表结构片段）
+    try:
+        schema_text = bundle.format_table_schema(table, include_values=False)
+        rendered = table in schema_text
+    except KeyError:
+        schema_text, rendered = "", False
+    report.checks.append(SyncCheck("prompt 表结构渲染", rendered))
+
+    return report
