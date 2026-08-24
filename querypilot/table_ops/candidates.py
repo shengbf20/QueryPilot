@@ -191,12 +191,19 @@ def _suggest_edge(
     edge_type: str,
     *,
     join_key: str,
+    filter_override: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     rules: list[str] = []
     if edge_type == "lookup":
         rules = ["dim_public_lookup"]
     elif table in _DATE_MISALIGNED_TABLES or target.target_table in _DATE_MISALIGNED_TABLES:
         rules = ["no_default_data_dt"]
+    if edge_type == "lookup":
+        # filter 优先用按列值集定位的 code_type（注册表模板是任意一条 lookup
+        # 边的 filter，dim_public 多个字典共用 code 列，模板值会撞错字典）
+        filt = dict(filter_override) if filter_override is not None else dict(target.filter)
+    else:
+        filt = {}
     return {
         "id": f"{table}_to_{target.target_table}",
         "from": table,
@@ -204,7 +211,7 @@ def _suggest_edge(
         "join": {join_key: target.target_column},
         "type": edge_type,
         "rules": rules,
-        "filter": dict(target.filter) if edge_type == "lookup" else {},
+        "filter": filt,
     }
 
 
@@ -248,7 +255,26 @@ def key_candidates(
             ).fetchone()
             target_unique[key] = cnt == dst
 
+        # dim_public 按字典分组的码集（lookup 边 filter 定位用；无 lookup 目标则不查）
+        codes_by_type: dict[str, set[str]] = {}
+        if any(t.edge_type == "lookup" and t.target_table == "dim_public" for t in registry):
+            for ctid, code in con.execute(
+                'SELECT code_type_id, code FROM dim_public WHERE code IS NOT NULL'
+            ).fetchall():
+                codes_by_type.setdefault(str(ctid), set()).add(str(code))
+
         candidates: list[KeyCandidate] = []
+
+        def _best_code_type(vals: set[str]) -> tuple[str, float] | None:
+            """列值集对 dim_public 各字典码集的包含率最高者。"""
+            best: tuple[str, float] | None = None
+            if not vals:
+                return best
+            for ctid, codes in sorted(codes_by_type.items()):
+                containment = len(vals & codes) / len(vals)
+                if best is None or containment > best[1]:
+                    best = (ctid, containment)
+            return best
 
         def _probe(col: str, target: KeyTarget, match_type: str) -> KeyCandidate | None:
             profile = profiles[col]
@@ -274,6 +300,20 @@ def key_candidates(
                 if match_type == "name"
                 else f"值域盲扫命中（非同名）包含率 {containment:.0%}"
             )
+            # lookup 边按列值集定位 filter.code_type_id（与 A4 字典判定同口径）
+            filter_override: dict[str, str] | None = None
+            if edge_type == "lookup" and target.target_table == "dim_public":
+                hit = _best_code_type(profile.distinct_values)
+                if hit and hit[1] >= _ENUM_MEDIUM:
+                    ctid, ct_containment = hit
+                    filter_override = {"code_type_id": ctid}
+                    label = metadata.values.code_types.get(ctid)
+                    if label is None:
+                        label = metadata.values.unused_code_types.get(ctid, "")
+                        label_text = f"{label}({ctid})" if label else ctid
+                    else:
+                        label_text = f"{label.label}({ctid})"
+                    reason += f"；码值定位字典 {label_text}（包含率 {ct_containment:.0%}）"
             return KeyCandidate(
                 column=col,
                 target_table=target.target_table,
@@ -284,7 +324,9 @@ def key_candidates(
                 confidence=confidence,
                 match_type=match_type,
                 reason=reason,
-                suggested_edge=_suggest_edge(table, target, edge_type, join_key=col),
+                suggested_edge=_suggest_edge(
+                    table, target, edge_type, join_key=col, filter_override=filter_override
+                ),
             )
 
         # 名字命中 → 包含性验证；未命中的列做值域盲扫。

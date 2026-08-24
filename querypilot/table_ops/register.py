@@ -158,8 +158,16 @@ def _append_mapping_entry(path: Path, header: str, entry: dict[str, Any]) -> Non
 
 
 def _append_column_ref(path: Path, code_type_id: str, table: str, column: str) -> None:
-    """在 value_descriptors.yaml 既有 code_types.<id>.column_refs 下追加一条引用。"""
+    """在 value_descriptors.yaml 的 code_types.<id>.column_refs 下追加一条引用。
+
+    类型只存在于 ``unused_code_types``（从未被引用）时，先在 code_types 下建完整条目
+    （label 取自 unused_code_types），并从 unused_code_types 移除该行。
+    """
     lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    type_header = f'  "{code_type_id}":'
+    if not any(line.rstrip("\r\n") == type_header for line in lines):
+        _promote_unused_code_type(path, code_type_id)
+        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
     type_header = f'  "{code_type_id}":'
     in_block = False
     for i, line in enumerate(lines):
@@ -176,6 +184,52 @@ def _append_column_ref(path: Path, code_type_id: str, table: str, column: str) -
             if stripped and not stripped.startswith("    "):
                 break  # 离开该 code_types 块（缩进 < 4）
     raise ValueError(f"column_refs not found under code_types.{code_type_id} in {path}")
+
+
+def _find_block_header(text: str, header: str) -> int:
+    """行首块头位置（避免 unused_code_types 被当作 code_types 子串命中）。"""
+    idx = -1
+    for m in __import__("re").finditer(rf"^{header}:", text, __import__("re").MULTILINE):
+        idx = m.start()
+    return idx
+
+
+def _promote_unused_code_type(path: Path, code_type_id: str) -> None:
+    """把 ``unused_code_types`` 里的类型升级为 code_types 完整条目（带首个 column_refs）。
+
+    label 从 unused_code_types 的中文描述取得；同时删除 unused 行，
+    三方一致性（表 YAML / join_graph filter / column_refs）由 metadata_validator 兜底。
+    """
+    import re as _re
+
+    text = path.read_text(encoding="utf-8")
+    match = _re.search(
+        rf'^(\s*)"?{code_type_id}"?:\s*(.+)$', text, _re.MULTILINE
+    )
+    # 只认 unused_code_types 块里的行：向上找最近的块头判断
+    if not match:
+        raise ValueError(f"code_type {code_type_id} not found in {path}")
+
+    before = text[: match.start()]
+    unused_block = _find_block_header(before, "unused_code_types")
+    code_block = _find_block_header(before, "code_types")
+    if unused_block == -1 or (code_block != -1 and unused_block < code_block):
+        raise ValueError(f"code_type {code_type_id} has no code_types block and is not in unused_code_types")
+
+    label = match.group(2).strip()
+    entry = (
+        f'  "{code_type_id}":\n'
+        f"    label: {label}\n"
+        f"    column_refs:\n"
+    )
+    lines = text.splitlines(keepends=True)
+    # 删 unused 行，在 code_types 块头后插入新条目
+    del_idx = next(i for i, line in enumerate(lines) if line.rstrip("\r\n") == match.group(0))
+    unused_line = lines.pop(del_idx)
+    insert_idx = _find_header(lines, "code_types") + 1
+    lines.insert(insert_idx, entry)
+    path.write_text("".join(lines), encoding="utf-8")
+    assert unused_line  # noqa: S101 - 仅为明确删除的是上面匹配的行
 
 
 # ---------- 组装与落盘 ----------

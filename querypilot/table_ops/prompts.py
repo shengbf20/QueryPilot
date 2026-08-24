@@ -41,6 +41,10 @@ def mechanical_questionnaire(
 
     neighbors = sorted({c.target_table for c in keys if c.confidence != "low"})
     pk = skeleton.get("primary_key") or []
+    key_by_column: dict[str, list[Any]] = {}
+    for c in keys:
+        if c.confidence != "low":
+            key_by_column.setdefault(c.column, []).append(c)
 
     questions: list[dict[str, Any]] = [
         {
@@ -90,6 +94,7 @@ def mechanical_questionnaire(
                     "confidence": c.confidence,
                     "containment": c.containment,
                     "edge_type": c.edge_type,
+                    "suggested_edge": c.suggested_edge,
                 }
                 for c in keys
                 if c.confidence != "low"

@@ -18,11 +18,8 @@
 ① 放 CSV           ② 登记 + 单表导入           ③ 全量重建（备用）
    (data_sim/)         (add_table.py --import)
                                               ↓
-④ 入库验证          ⑤ 生成问卷                  ⑥ 答问卷落盘
-   discover            questionnaire               register
-                                              ↓
-⑦ 自动回归          ⑧ 冒烟提问验证
-   validate            querypilot ask
+④ 入库验证          ⑤⑥ 网页问卷一键落盘          ⑦⑧ 自动回归 + 冒烟
+   discover            /onboarding 表单              validate / ask
 ```
 
 ---
@@ -109,20 +106,40 @@ $env:PYTHONIOENCODING="utf-8"; python -m querypilot.table_ops.discover [name]
 
 ---
 
-## ⑤ 生成登记问卷（A9：候选 + 默认答案）
+## ⑤⑥ 网页问卷：一屏填完，一键落盘 + 校验 + 回归（推荐）
+
+先启动服务（若未启动）：
 
 ```powershell
-$env:PYTHONIOENCODING="utf-8"; python -m querypilot.table_ops.cli questionnaire [name]
+$env:PYTHONIOENCODING="utf-8"; python -m querypilot.cli serve
 ```
 
-输出 Q1-Q7 业务问题和机械候选底稿（Q5 会列出值域验证过的 join 边候选及置信度，
-Q6 列出枚举/字典候选）。**逐项核对**，这些就是 ⑥ 要提供的答案。
+浏览器打开 **http://127.0.0.1:8000/onboarding** ，输入表名点「生成问卷」：
+表描述、列含义、关联边、枚举含义等都已预填机械候选的默认答案，
+只需改/补必填项（表别名、表描述、触发词、每列含义、冒烟问句），
+勾选确认的关联边，点「提交注册」。
 
----
+提交后页面直接显示 **A6 同步报告**（7 项，应全绿，零代码改动）与
+**A7/A8 回归报告**（静态校验 + YAML↔DB 对齐 + join 边连通 + 剪枝冒烟）。
+serve 进程内的元数据缓存会自动失效，无需重启即可提问。
 
-## ⑥ 回答问卷，一条命令落盘 + 校验 + 回归
+**关键规则**：
+
+| 项 | 说明 |
+|----|------|
+| 必填项 | 表别名、表描述、触发词（用户提到什么词必须选中这张表）、每列含义、冒烟问句 |
+| 关联边 | 默认勾选「高置信 + 包含率 ≥ 99%」的候选；lookup 边的 `code_type_id` 已按列值集自动定位 |
+| 枚举 | 命中 dim_public 字典的列自动同步 `value_descriptors`；未命中的低基数列逐值填含义 |
+| 注册顺序 | **先维表（dim_），后引用它的事实表**——中途 join_graph 短暂不一致会被 A7 拦截 |
+| 冒烟问句 | 要含触发词且问法域内典型（如「有多少激进型客户」） |
+
+### 命令行方式（备用，与网页等价）
 
 ```powershell
+# 生成问卷（查看机械候选与默认答案）
+$env:PYTHONIOENCODING="utf-8"; python -m querypilot.table_ops.cli questionnaire [name]
+
+# 落盘 + 校验 + 回归
 $env:PYTHONIOENCODING="utf-8"; python -m querypilot.table_ops.cli register [name] --yes `
   --alias <表别名> `
   --description "<一句话表用途>" `
@@ -133,26 +150,15 @@ $env:PYTHONIOENCODING="utf-8"; python -m querypilot.table_ops.cli register [name
   --question "[question]"
 ```
 
-（PowerShell 用反引号 `` ` `` 续行；每列都要给 `--col-desc`，否则 A7 校验失败。）
-
-这条命令自动完成：**A5 落盘**（表 YAML + join_graph + pruning + value_descriptors）
-→ **A6 同步报告**（7 项，应显示「全部同步生效，零代码改动」）→ **A7/A8 回归**
-（静态校验 + YAML↔DB 对齐 + join 边连通 + 剪枝冒烟）。
-
-**关键规则**：
-
-| 项 | 说明 |
-|----|------|
-| `--edge` 格式 | `列:目标表.目标列[:类型[:规则]]`，类型 `fact`/`dimension`/`lookup` |
-| `--enum-meaning` | `列=值:含义,值:含义`，回填 Q6 的 new 枚举 |
-| 注册顺序 | **先维表（dim_），后引用它的事实表**——中途 join_graph 短暂不一致会被 A7 拦截 |
-| `--dry-run` | 只渲染不写盘，先看要落什么 |
-| `--force` | 覆盖已存在的表 YAML（慎用） |
-| 维表/事实表自动行为 | dwd/dws 自动进 `fact_tables`（客户枢纽注入生效）；`--cue` 挂剪枝触发词 |
+（PowerShell 用反引号 `` ` `` 续行；每列都要给 `--col-desc`，否则 A7 校验失败。
+`--edge` 格式 `列:目标表.目标列[:类型[:规则]]`；`--enum-meaning` 回填 new 枚举；
+`--dry-run` 只渲染不写盘；`--force` 覆盖已存在的表 YAML。）
 
 ---
 
 ## ⑦⑧ 最终冒烟
+
+网页注册成功后（报告全绿），可再命令行复核或端到端提问：
 
 ```powershell
 # 剪枝冒烟（确定性，不调 LLM）
@@ -162,7 +168,8 @@ $env:PYTHONIOENCODING="utf-8"; python -m querypilot.table_ops.validate [name] --
 $env:PYTHONIOENCODING="utf-8"; python -m querypilot.cli ask "[question]"
 ```
 
-若 serve / chat 正在运行：**需重启进程**才能加载新元数据（元数据在进程启动时加载并缓存）。
+经 `/onboarding` 网页注册的，serve 进程缓存已自动失效，可直接继续提问；
+走 ⑥ 命令行注册的，若 serve / chat 正在运行需**重启进程**才能加载新元数据。
 
 ---
 
@@ -172,11 +179,13 @@ $env:PYTHONIOENCODING="utf-8"; python -m querypilot.cli ask "[question]"
 |------|-----------|
 | `table not found in database` | 没跑 ②/③，或表名/DDL 拼错；用 ④ 先验证入库 |
 | 重建报 DuckDB 文件锁错误 | serve/chat/评测进程还开着，关掉再跑 |
-| A7 报 `missing description` | ⑥ 漏了某列的 `--col-desc`（每列必填） |
+| 网页报「表不存在」 | 问卷接口只认**已入库**的表；先完成 ②/③ |
+| 网页提交报 409 | 该表 YAML 已存在；确需覆盖走命令行 `--force`（慎用） |
+| A7 报 `missing description` | 问卷里某列含义留空（每列必填） |
 | register 报 `KeyError: 目标表` | 注册顺序反了：先注册边指向的维表 |
-| 剪枝冒烟不命中 | 冒烟问句要含 `--cue` 里的触发词（问法需域内典型，如「服务经理名下有多少客户」） |
+| 剪枝冒烟不命中 | 冒烟问句要含触发词（问法需域内典型，如「服务经理名下有多少客户」） |
 | CSV 中文乱码 | 文件需 UTF-8；命令前缀 `$env:PYTHONIOENCODING="utf-8"; ` |
-| prompt 里枚举显示空 | Q6 的 new 枚举没回填含义，`--enum-meaning` 提供 |
+| prompt 里枚举显示空 | 网页枚举区「新枚举」含义没填；命令行走 `--enum-meaning` |
 
 ---
 

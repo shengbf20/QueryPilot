@@ -159,6 +159,7 @@ def prune_smoke(
     metadata_dir: Path | None = None,
 ) -> dict[str, bool]:
     """每个冒烟问句剪枝后应包含新表（确定性，零 LLM）。"""
+    from querypilot.metadata_engine.pruning_config import load_pruning_config
     from querypilot.metadata_engine.schema_pruner import SchemaPruner
 
     metadata_dir = metadata_dir or get_settings().metadata_dir
@@ -168,7 +169,8 @@ def prune_smoke(
         value_config_path=metadata_dir / "value_descriptors.yaml",
         load_db_codes=False,
     )
-    pruner = SchemaPruner(bundle)
+    # 剪枝配置也要用副本的：新表的 cues/fact_tables 登记在副本 pruning.yaml 里
+    pruner = SchemaPruner(bundle, pruning_config=load_pruning_config(metadata_dir / "pruning.yaml"))
     return {q: table in pruner.prune(q).tables for q in questions}
 
 
