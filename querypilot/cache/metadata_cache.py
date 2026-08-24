@@ -21,6 +21,13 @@ def _resolve_use_cache(use_cache: bool | None) -> bool:
     return bool(get_settings().cache_enabled)
 
 
+def _pruning_default_fallback() -> str:
+    """兜底表默认值与 SchemaPruner/pruning.yaml 保持一致。"""
+    from querypilot.metadata_engine.pruning_config import load_pruning_config
+
+    return load_pruning_config().default_fallback_table
+
+
 def _default_paths_only(
     tables_dir: Path | None,
     join_graph_path: Path | None,
@@ -99,7 +106,9 @@ def get_pruned_schema(
     top_k = int(kwargs.get("top_k", 4)) # 获取 top_k
     min_score = float(kwargs.get("min_score", 1.5)) # 获取 min_score
     expand = bool(kwargs.get("expand", True)) # 获取 expand
-    fallback_table = kwargs.get("fallback_table", "ads_cust_info_d") # 获取 fallback_table
+    fallback_table = kwargs.get("fallback_table") # 获取 fallback_table（None -> 用 pruning.yaml 默认）
+    if fallback_table is None:
+        fallback_table = _pruning_default_fallback()
     key = (qn, id(metadata), top_k, min_score, expand, fallback_table) # 生成缓存键
 
     if cache_on:

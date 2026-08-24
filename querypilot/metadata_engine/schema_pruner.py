@@ -1,4 +1,9 @@
-"""Schema Pruner: retrieve relevant tables from a NL question and expand via Join-Graph."""
+"""Schema Pruner: retrieve relevant tables from a NL question and expand via Join-Graph.
+
+裁剪机制（打分、Join-Graph 扩张、top_k 编排）在本文件；
+领域知识（表身份 / 触发词 / 同义词）外置于 metadata/pruning.yaml，
+经 ``pruning_config.load_pruning_config()`` 加载。
+"""
 
 from __future__ import annotations
 
@@ -9,67 +14,7 @@ from querypilot.metadata_engine.bundle import MetadataBundle
 from querypilot.metadata_engine.join_graph import JoinPlan
 from querypilot.metadata_engine.metrics import metrics_for_tables
 from querypilot.metadata_engine.models import ColumnMeta, TableMeta
-
-# Soft query expansions for common marketing phrasings (trigger -> extra search terms).
-_QUERY_EXPANSIONS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
-    (("女性", "男性", "男女"), ("性别",)),
-    (("购买", "买过", "买了", "买入过"), ("买入", "交易")),
-    (("卖过", "卖掉", "卖出过"), ("卖出", "交易")),
-    (("持有",), ("持仓",)),
-    (("入金", "出金", "净流入"), ("资金", "现金流入", "现金流出")),
-    (("盈亏", "损益", "收益情况"), ("资金", "资产", "资金流入", "资金流出")),
-    (("AUM", "净资产", "资产规模"), ("总资产", "资产")),
-    (("会员", "VIP", "高净值"), ("客户等级",)),
-    # Product / board / trade cues (gold Q&A 5–7 often omit the literal table aliases).
-    (("交易量", "交易过", "交易额", "成交额"), ("交易", "买入", "卖出", "客户交易")),
-    (("科创板", "创业板", "主板", "A股"), ("产品类型", "产品二级分类", "产品")),
-    (("产品大类", "产品类型", "证券"), ("产品", "产品大类", "产品一级分类")),
-)
-
-# Domain cues → force-include tables even when keyword score is low or top_k is full.
-_DOMAIN_SEED_CUES: tuple[tuple[tuple[str, ...], str], ...] = (
-    (("交易", "买入", "卖出", "买卖", "交易量", "交易额", "成交额", "客户交易"), "dwd_cust_tran_d"),
-    (("持有", "持仓", "市值"), "dwd_cust_hold_d"),
-    (
-        (
-            "产品",
-            "产品大类",
-            "产品类型",
-            "产品二级分类",
-            "产品一级分类",
-            "基金",
-            "证券",
-            "科创板",
-            "创业板",
-            "主板",
-            "A股",
-            "持仓",
-            "持有",
-        ),
-        "dim_product",
-    ),
-    (("盈亏", "损益", "入金", "出金", "净流入", "资金流入", "资金流出"), "dws_cust_fin_d"),
-    (("盈亏", "损益", "收益情况"), "dws_cust_aset_d"),
-)
-
-# Dim dictionary is usually injected via value descriptors, not as a join seed.
-_AUTO_SEED_BLOCKLIST = frozenset({"dim_public"})
-
-_FACT_TABLES = frozenset(
-    {
-        "dws_cust_aset_d",
-        "dws_cust_fin_d",
-        "dwd_cust_hold_d",
-        "dwd_cust_tran_d",
-    }
-)
-
-# Org dim alone does not trigger fact-hub injection; customer+branch still needs ads.
-_ORG_DIM_TABLES = frozenset({"dim_branch"})
-
-_CUSTOMER_CUES = ("客户", "人群", "用户", "投资者")
-
-_DEFAULT_FALLBACK_TABLE = "ads_cust_info_d"
+from querypilot.metadata_engine.pruning_config import PruningConfig, load_pruning_config
 
 _TOKEN_RE = re.compile(r"[a-z0-9_]+", re.IGNORECASE)
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]+")
@@ -142,8 +87,14 @@ class _IndexedTable:
 class SchemaPruner:
     """Keyword / alias retrieval + Join-Graph completion."""
 
-    def __init__(self, metadata: MetadataBundle) -> None:
+    def __init__(
+        self,
+        metadata: MetadataBundle,
+        *,
+        pruning_config: PruningConfig | None = None,
+    ) -> None:
         self.metadata = metadata
+        self._config = pruning_config or load_pruning_config()
         self._index = []
         for meta in metadata.tables.values():
             role = ""
@@ -159,18 +110,26 @@ class SchemaPruner:
         top_k: int = 4,
         min_score: float = 1.5,
         expand: bool = True,
-        fallback_table: str | None = _DEFAULT_FALLBACK_TABLE,
+        fallback_table: str | None = None,
     ) -> PrunedSchema:
-        """Return seed tables for ``question``, optionally expanded via Join-Graph."""
+        """Return seed tables for ``question``, optionally expanded via Join-Graph.
+
+        ``fallback_table``: None -> 用 pruning.yaml 的 default_fallback_table；
+        传空字符串 "" 显式禁用兜底。
+        """
         q = question.strip()
         if not q:
             raise ValueError("question must be non-empty")
 
-        search_text = _expand_query(q)
+        config = self._config
+        if fallback_table is None:
+            fallback_table = config.default_fallback_table
+
+        search_text = _expand_query(q, config)
         table_hits = self._score_tables(search_text)
-        seeds = self._select_seeds(table_hits, top_k=top_k, min_score=min_score)
-        seeds = _ensure_customer_hub(seeds, search_text)
-        seeds = _ensure_domain_seeds(seeds, search_text, self.metadata)
+        seeds = self._select_seeds(table_hits, top_k=top_k, min_score=min_score, config=config)
+        seeds = _ensure_customer_hub(seeds, search_text, config)
+        seeds = _ensure_domain_seeds(seeds, search_text, self.metadata, config)
 
         if not seeds and fallback_table and fallback_table in self.metadata.tables:
             seeds = [fallback_table]
@@ -246,10 +205,11 @@ class SchemaPruner:
         *,
         top_k: int,
         min_score: float,
+        config: PruningConfig,
     ) -> list[str]:
         seeds: list[str] = []
         for hit in table_hits:
-            if hit.table in _AUTO_SEED_BLOCKLIST:
+            if hit.table in config.auto_seed_blocklist:
                 # Only keep dim_public when the table itself is strongly mentioned.
                 if hit.score < max(min_score * 2, 4.0) and not any(
                     t in {"公共维表", "dim_public"} for t in hit.matched_terms
@@ -312,13 +272,13 @@ def _alias_stems(alias: str) -> list[str]:
     return []
 
 
-def _ensure_customer_hub(seeds: list[str], search_text: str) -> list[str]:
+def _ensure_customer_hub(seeds: list[str], search_text: str, config: PruningConfig) -> list[str]:
     """Keep customer hub when NL mentions customers and seeds are facts or org dims."""
     if "ads_cust_info_d" in seeds:
         return seeds
-    mentions_customer = any(cue in search_text for cue in _CUSTOMER_CUES)
-    has_fact = any(name in _FACT_TABLES for name in seeds)
-    has_org_dim = any(name in _ORG_DIM_TABLES for name in seeds)
+    mentions_customer = any(cue in search_text for cue in config.customer_cues)
+    has_fact = any(name in config.fact_tables for name in seeds)
+    has_org_dim = any(name in config.org_dim_tables for name in seeds)
     if mentions_customer and (has_fact or has_org_dim):
         return ["ads_cust_info_d", *seeds]
     return seeds
@@ -328,6 +288,7 @@ def _ensure_domain_seeds(
     seeds: list[str],
     search_text: str,
     metadata: MetadataBundle,
+    config: PruningConfig,
 ) -> list[str]:
     """Append domain-required tables beyond top_k when NL cues match.
 
@@ -335,7 +296,7 @@ def _ensure_domain_seeds(
     or fall just below the seed cutoff while higher-scoring hubs fill top_k.
     """
     out = list(seeds)
-    for cues, table in _DOMAIN_SEED_CUES:
+    for cues, table in config.domain_seed_cues:
         if table in out or table not in metadata.tables:
             continue
         if any(cue in search_text for cue in cues):
@@ -373,9 +334,9 @@ def _split_phrases(text: str) -> list[str]:
     return [p for p in parts if p]
 
 
-def _expand_query(question: str) -> str:
+def _expand_query(question: str, config: PruningConfig) -> str:
     extra: list[str] = []
-    for triggers, terms in _QUERY_EXPANSIONS:
+    for triggers, terms in config.query_expansions:
         if any(t in question for t in triggers):
             extra.extend(terms)
     if not extra:

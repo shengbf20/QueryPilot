@@ -20,6 +20,7 @@ from querypilot.metadata_engine.metadata_validator import (
     validate_metadata_all,
 )
 from querypilot.metadata_engine.models import ColumnMeta, TableMeta
+from querypilot.metadata_engine.pruning_config import PruningConfig, load_pruning_config
 from querypilot.metadata_engine.schema_pruner import (
     ColumnHit,
     PrunedSchema,
@@ -48,6 +49,8 @@ __all__ = [
     "SchemaPruner",
     "MetadataBundle",
     "MetadataValidationResult",
+    "PruningConfig",
+    "load_pruning_config",
     "ValidationResult",
     "ValueDescriptorRegistry",
     "ValueDescriptorValidationResult",
