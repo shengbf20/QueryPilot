@@ -47,38 +47,35 @@ Copy-Item .\dwd_cust_sign_d.csv .\data_sim\
 
 ---
 
-## ② 在 scripts/import_data.py 登记表
+## ② 登记 import_data.py（自动）
 
-打开 [scripts/import_data.py](scripts/import_data.py)，在 `TABLES` 字典末尾加一个条目：
+一条命令完成登记（类型自动推断，先在内存库试导入验证，再写入）：
 
-```python
-    # --- 新表（data_sim/）---
-    "dwd_cust_sign_d": {
-        "pattern": "dwd_cust_sign_d*.csv",
-        "csv_dir": SIM_DATA_DIR,          # 放 data/ 之外才需要这行
-        "ddl": """
-            CREATE TABLE dwd_cust_sign_d (
-                data_dt VARCHAR NOT NULL,
-                pty_id VARCHAR NOT NULL,
-                sign_type VARCHAR,
-                sign_date VARCHAR
-            )
-        """,
-    },
+```powershell
+PYTHONIOENCODING=utf-8 python scripts/add_table.py data_sim/dwd_cust_sign_d.csv --import
 ```
 
-**DDL 写法约定**：
+脚本自动完成：
 
-- 键列（日期/ID/编码）用 `VARCHAR`；金额/份额度量列用 `DECIMAL(20, 4)`；计数值用 `INTEGER`；
-- 拿不准就全 `VARCHAR`——系统读取以元数据 YAML 为准，DB 类型只做对齐校验；
-- 列名/顺序与 CSV 表头一致（`read_csv` 按位置插入）。
+- 表名从文件名推断（`xxx_20260824.csv` → `xxx`）；
+- **类型推断**（与既有 DDL 约定一致）：`_cd`/`_id` 后缀编码键列 → `VARCHAR`（防前导零丢失），
+  日期样式（8 位数字）→ `VARCHAR`，整数 → `INTEGER`/`BIGINT`，小数 → `DECIMAL(20, 4)`；
+- 在 `TABLES` 字典末尾插入条目（保注释文本手术），并做语法校验；
+- `--import` 同时对现有库做**单表轻量导入**（不动其他表）。
 
-> 这一步是全流程**唯一**需要动代码的地方，且是运维脚本，不是热路径。
-> （这正是 logs/08 说的「数据入库登记」，元数据注册全部走 ⑤⑥ 的问卷流程。）
+不带 `--import` 则只登记，之后走 ③ 全量重建。`--dry-run` 只打印条目不写盘；
+已登记的表会拒绝重复登记。
+
+> 手写方式（备用）：打开 [scripts/import_data.py](scripts/import_data.py) 在 `TABLES`
+> 字典末尾照既有条目格式手写（`pattern` / 可选 `csv_dir` / `ddl`），
+> 列名顺序与 CSV 表头一致（`read_csv` 按位置插入），类型按上述约定。
 
 ---
 
 ## ③ 导入 DuckDB
+
+> ② 已带 `--import` 的话本步已完成（单表导入），可直接跳到 ④；
+> 需要全量重建时仍用方式 A。
 
 ### 方式 A：全量重建（标准路径）
 
@@ -98,23 +95,7 @@ PYTHONIOENCODING=utf-8 python scripts/import_data.py
 
 ### 方式 B：单表轻量导入（不动其他表）
 
-只在加一张表、不想全量重建时用。新建临时脚本或直接 `python -c`：
-
-```powershell
-PYTHONIOENCODING=utf-8 python -c "
-import duckdb
-con = duckdb.connect('db/competition.duckdb')
-con.execute('DROP TABLE IF EXISTS dwd_cust_sign_d')
-con.execute('''CREATE TABLE dwd_cust_sign_d (
-    data_dt VARCHAR NOT NULL, pty_id VARCHAR NOT NULL,
-    sign_type VARCHAR, sign_date VARCHAR)''')
-con.execute(\"INSERT INTO dwd_cust_sign_d SELECT * FROM read_csv('data_sim/dwd_cust_sign_d.csv', header=true, sample_size=-1)\")
-print(con.execute('SELECT COUNT(*) FROM dwd_cust_sign_d').fetchone())
-con.close()
-"
-```
-
-同样要求没有其他进程占用该库文件。
+即 ② 的 `--import`（`scripts/add_table.py` 内置），不再需要手写 python -c。
 
 ---
 
@@ -205,6 +186,5 @@ PYTHONIOENCODING=utf-8 python -m querypilot.cli ask "签约客户有多少人"
 | 动作 | 文件 |
 |------|------|
 | 放数据 | `data_sim/<表名>*.csv` |
-| 唯一代码改动 | `scripts/import_data.py`（TABLES 登记） |
-| 机器自动写 | `metadata/tables/<表名>.yaml`、`metadata/join_graph.yaml`、`metadata/pruning.yaml`、`metadata/value_descriptors.yaml` |
-| 全程不碰 | `querypilot/` 任何热路径代码 |
+| 机器自动写 | `scripts/import_data.py`（TABLES 登记，由 `scripts/add_table.py` 完成）、`metadata/tables/<表名>.yaml`、`metadata/join_graph.yaml`、`metadata/pruning.yaml`、`metadata/value_descriptors.yaml` |
+| 全程不碰 | `querypilot/` 任何热路径代码、任何手写 YAML |
