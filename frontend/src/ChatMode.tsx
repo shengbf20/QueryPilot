@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { ApiError, exportCsv, postAsk } from "./api";
-import { OverflowSql, OverflowTable } from "./Overflow";
+import { ApiError, postAsk } from "./api";
+import ExportMenu from "./ExportMenu";
+import { OverflowSql, ResultTableView } from "./Overflow";
 import { summarizeAsk } from "./summarize";
 import type { AskResponse, ChatMessage, HistoryTurn } from "./types";
 
@@ -32,7 +33,7 @@ function ResultTable({ result }: { result: AskResponse }) {
     <div className="result-block">
       <span className="block-kicker">结果表</span>
       <div className="chat-table">
-        <OverflowTable columns={result.columns} rows={result.rows} />
+        <ResultTableView columns={result.columns} rows={result.rows} />
       </div>
     </div>
   );
@@ -60,12 +61,16 @@ function AssistantBody({
   thoughtsOpen,
   onToggleDetails,
   onToggleThoughts,
+  onHint,
+  onError,
 }: {
   msg: ChatMessage;
   detailsOpen: boolean;
   thoughtsOpen: boolean;
   onToggleDetails: () => void;
   onToggleThoughts: () => void;
+  onHint: (text: string) => void;
+  onError: (text: string) => void;
 }) {
   const r = msg.result;
   const safety = r?.stage === "safety";
@@ -88,20 +93,17 @@ function AssistantBody({
       {r ? <ResultTable result={r} /> : null}
       {r ? (
         <div className="msg-actions">
-          <button type="button" className="linkish" onClick={onToggleDetails}>
+          <button type="button" className="action-btn" onClick={onToggleDetails}>
             {detailsOpen ? "收起" : "详情"}
           </button>
-          {r.columns.length ? (
-            <button
-              type="button"
-              className="linkish"
-              onClick={() => {
-                void exportCsv(r.columns, r.rows);
-              }}
-            >
-              导出
-            </button>
-          ) : null}
+          <ExportMenu
+            columns={r.columns}
+            rows={r.rows}
+            question={r.question}
+            sql={r.sql}
+            onHint={onHint}
+            onError={onError}
+          />
         </div>
       ) : null}
       {detailsOpen && r ? (
@@ -146,6 +148,7 @@ export default function ChatMode({ seedQuestion, seedResult, resetEpoch = 0 }: C
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [hint, setHint] = useState("");
   const [openDetails, setOpenDetails] = useState<Record<string, boolean>>({});
   const [openThoughts, setOpenThoughts] = useState<Record<string, boolean>>({});
   const skipSeed = useRef(false);
@@ -174,6 +177,7 @@ export default function ChatMode({ seedQuestion, seedResult, resetEpoch = 0 }: C
     setMessages([]);
     setDraft("");
     setError("");
+    setHint("");
     setOpenDetails({});
     setOpenThoughts({});
   }, [resetEpoch]);
@@ -188,6 +192,7 @@ export default function ChatMode({ seedQuestion, seedResult, resetEpoch = 0 }: C
     setDraft("");
     setLoading(true);
     setError("");
+    setHint("");
     try {
       const data = await postAsk(q, toHistory(messages), {
         mode: "agent",
@@ -246,11 +251,20 @@ export default function ChatMode({ seedQuestion, seedResult, resetEpoch = 0 }: C
                   onToggleThoughts={() =>
                     setOpenThoughts((prev) => ({ ...prev, [msg.id]: !prev[msg.id] }))
                   }
+                  onHint={(text) => {
+                    setError("");
+                    setHint(text);
+                  }}
+                  onError={(text) => {
+                    setHint("");
+                    setError(text);
+                  }}
                 />
               </div>
             ),
           )}
           {loading ? <p className="muted chat-waiting">正在生成…</p> : null}
+          {hint ? <p className="muted chat-waiting">{hint}</p> : null}
           {error ? <div className="alert">{error}</div> : null}
           <div ref={bottomRef} />
         </div>

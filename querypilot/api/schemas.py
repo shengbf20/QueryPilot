@@ -26,6 +26,7 @@ class ExportRequest(BaseModel):
     columns: list[str]
     rows: list[list[Any]] = Field(default_factory=list)
     filename: str = "querypilot_export.csv"
+    format: Literal["csv", "xlsx"] = "csv"
 
 
 class HealthResponse(BaseModel):

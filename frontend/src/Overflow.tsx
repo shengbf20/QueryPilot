@@ -2,7 +2,6 @@ import { useState } from "react";
 import { formatCell } from "./summarize";
 
 const SQL_MAX_LINES = 16;
-const TABLE_MAX_ROWS = 12;
 
 export function OverflowSql({ sql }: { sql: string }) {
   const [open, setOpen] = useState(false);
@@ -21,43 +20,33 @@ export function OverflowSql({ sql }: { sql: string }) {
   );
 }
 
-export function OverflowTable({
+export function ResultTableView({
   columns,
   rows,
 }: {
   columns: string[];
   rows: unknown[][];
 }) {
-  const [open, setOpen] = useState(false);
-  const long = rows.length > TABLE_MAX_ROWS;
-  const shown = !long || open ? rows : rows.slice(0, TABLE_MAX_ROWS);
   return (
-    <>
-      <div className="table-wrap">
-        <table className="result">
-          <thead>
-            <tr>
-              {columns.map((c) => (
-                <th key={c}>{c}</th>
+    <div className="table-wrap">
+      <table className="result">
+        <thead>
+          <tr>
+            {columns.map((c) => (
+              <th key={c}>{c}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => (
+            <tr key={i}>
+              {columns.map((_, j) => (
+                <td key={j}>{formatCell(row[j])}</td>
               ))}
             </tr>
-          </thead>
-          <tbody>
-            {shown.map((row, i) => (
-              <tr key={i}>
-                {columns.map((_, j) => (
-                  <td key={j}>{formatCell(row[j])}</td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {long ? (
-        <button type="button" className="linkish overflow-toggle" onClick={() => setOpen((v) => !v)}>
-          {open ? "收起表格" : `展开全部 ${rows.length} 行`}
-        </button>
-      ) : null}
-    </>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

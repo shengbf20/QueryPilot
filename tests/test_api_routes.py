@@ -114,3 +114,26 @@ def test_api_export_csv() -> None:
     assert text.splitlines()[0] == "n,name"
     assert "1,a" in text
     assert "2,b" in text
+
+
+def test_api_export_xlsx() -> None:
+    from io import BytesIO
+
+    from openpyxl import load_workbook
+
+    client = TestClient(create_app())
+    resp = client.post(
+        "/api/export",
+        json={
+            "columns": ["n", "name"],
+            "rows": [[1, "甲"], [2, "乙"]],
+            "filename": "问数_测试",
+            "format": "xlsx",
+        },
+    )
+    assert resp.status_code == 200
+    assert "spreadsheetml" in resp.headers["content-type"]
+    wb = load_workbook(BytesIO(resp.content))
+    rows = list(wb.active.iter_rows(values_only=True))
+    assert rows[0] == ("n", "name")
+    assert rows[1] == (1, "甲")

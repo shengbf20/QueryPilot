@@ -35,6 +35,7 @@ export async function postAsk(
       history,
       mode: opts.mode ?? "fast",
       session_id: opts.sessionId ?? "",
+      max_rows: 100000,
     }),
   });
   if (!resp.ok) {
@@ -43,26 +44,3 @@ export async function postAsk(
   return (await resp.json()) as AskResponse;
 }
 
-export async function exportCsv(
-  columns: string[],
-  rows: unknown[][],
-  filename = "querypilot_export.csv",
-): Promise<void> {
-  const resp = await fetch("/api/export", {
-    method: "POST",
-    headers: { "Content-Type": "application/json; charset=utf-8" },
-    body: JSON.stringify({ columns, rows, filename }),
-  });
-  if (!resp.ok) {
-    throw new ApiError(await readErrorMessage(resp), resp.status);
-  }
-  const blob = await resp.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename.endsWith(".csv") ? filename : `${filename}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}

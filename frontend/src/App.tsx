@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type KeyboardEvent } from "react";
 import "./App.css";
-import { ApiError, exportCsv, postAsk } from "./api";
+import { ApiError, postAsk } from "./api";
 import ChatMode from "./ChatMode";
-import { OverflowSql, OverflowTable } from "./Overflow";
+import ExportMenu from "./ExportMenu";
+import { OverflowSql, ResultTableView } from "./Overflow";
 import type { AskResponse, HistoryTurn } from "./types";
 
 const TIMING_STEPS: { key: keyof AskResponse["timing"]; label: string }[] = [
@@ -15,11 +16,9 @@ const TIMING_STEPS: { key: keyof AskResponse["timing"]; label: string }[] = [
   { key: "total_ms", label: "合计" },
 ];
 
-const EXAMPLE_QUESTION = "有多少年龄大于30岁的女性客户？";
-
 export default function App() {
   const [uiMode, setUiMode] = useState<"lab" | "chat">("lab");
-  const [question, setQuestion] = useState(EXAMPLE_QUESTION);
+  const [question, setQuestion] = useState("");
   const [result, setResult] = useState<AskResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -47,10 +46,7 @@ export default function App() {
 
   async function onAsk() {
     const q = question.trim();
-    if (!q) {
-      setError("问题不能为空");
-      return;
-    }
+    if (!q || loading) return;
     setLoading(true);
     setError("");
     setStatusHint("");
@@ -84,25 +80,10 @@ export default function App() {
     }
   }
 
-  async function onExport() {
-    if (!result?.columns?.length) {
-      setStatusHint("暂无结果可导出。");
-      return;
-    }
-    setError("");
-    try {
-      await exportCsv(result.columns, result.rows, "querypilot_export.csv");
-      setStatusHint("已下载 CSV。");
-    } catch (err) {
-      const msg =
-        err instanceof ApiError
-          ? err.message
-          : err instanceof TypeError
-            ? "导出失败：无法连接 API（请先 serve）。"
-            : err instanceof Error
-              ? err.message
-              : String(err);
-      setError(msg);
+  function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      void onAsk();
     }
   }
 
@@ -151,21 +132,14 @@ export default function App() {
           <textarea
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            placeholder={clarifying ? "针对追问补充说明…" : "输入自然语言问题…"}
+            onKeyDown={onKeyDown}
+            placeholder={clarifying ? "针对追问补充说明…" : "输入问题，Enter 发送"}
             aria-label="问句"
             disabled={loading}
           />
           <div className="composer-actions">
-            <button type="button" onClick={onAsk} disabled={loading}>
+            <button type="button" onClick={onAsk} disabled={loading || !question.trim()}>
               {loading ? "询问中…" : clarifying ? "追加说明" : "发送"}
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              onClick={onExport}
-              disabled={!result || loading}
-            >
-              导出 CSV
             </button>
           </div>
           {loading ? <p className="muted">正在查询…</p> : null}
@@ -178,7 +152,7 @@ export default function App() {
         </section>
 
         {!result ? (
-          <p className="empty">输入问题后点发送。例如：有多少年龄大于 30 岁的女性客户？</p>
+          <p className="empty">输入问题，Enter 发送。</p>
         ) : (
           <>
             {result.stage === "clarify" || history.length > 0 ? (
@@ -205,11 +179,27 @@ export default function App() {
             ) : null}
 
             <section className="panel">
-              <h2>结果 · {result.row_count} 行</h2>
+              <h2 className="panel-head">
+                <span>结果 · {result.row_count} 行</span>
+                <ExportMenu
+                  columns={result.columns}
+                  rows={result.rows}
+                  question={result.question}
+                  sql={result.sql}
+                  onHint={(text) => {
+                    setError("");
+                    setStatusHint(text);
+                  }}
+                  onError={(text) => {
+                    setStatusHint("");
+                    setError(text);
+                  }}
+                />
+              </h2>
               {result.columns.length === 0 ? (
                 <p className="muted">{result.stage === "clarify" ? "补充后即可出表。" : "无结果列"}</p>
               ) : (
-                <OverflowTable columns={result.columns} rows={result.rows} />
+                <ResultTableView columns={result.columns} rows={result.rows} />
               )}
             </section>
 
