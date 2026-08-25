@@ -65,6 +65,8 @@ def chat(
         kwargs["max_tokens"] = max_tokens
     if response_format is not None:
         kwargs["response_format"] = response_format
+    # V4 默认开思考，reasoning 会占满 max_tokens，content 变空。
+    kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
 
     response = active_client.chat.completions.create(**kwargs)
     choice = response.choices[0].message
