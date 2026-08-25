@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { ApiError, exportCsv, postAsk } from "./api";
-import { formatCell, summarizeAsk } from "./summarize";
+import { OverflowSql, OverflowTable } from "./Overflow";
+import { summarizeAsk } from "./summarize";
 import type { AskResponse, ChatMessage, HistoryTurn } from "./types";
 
 const TIMING_STEPS: { key: keyof AskResponse["timing"]; label: string }[] = [
@@ -29,26 +30,9 @@ function ResultTable({ result }: { result: AskResponse }) {
   if (!result.columns.length) return null;
   return (
     <div className="result-block">
-      <span className="block-kicker">结果表：</span>
-      <div className="table-wrap chat-table">
-      <table className="result">
-        <thead>
-          <tr>
-            {result.columns.map((c) => (
-              <th key={c}>{c}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {result.rows.map((row, i) => (
-            <tr key={i}>
-              {result.columns.map((_, j) => (
-                <td key={j}>{formatCell(row[j])}</td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <span className="block-kicker">结果表</span>
+      <div className="chat-table">
+        <OverflowTable columns={result.columns} rows={result.rows} />
       </div>
     </div>
   );
@@ -100,7 +84,7 @@ function AssistantBody({
         </div>
       ) : null}
       {msg.text ? <p className={safety ? "nl safety-nl" : "nl"}>{msg.text}</p> : null}
-      {r?.sql ? <pre className="sql">{r.sql}</pre> : null}
+      {r?.sql ? <OverflowSql sql={r.sql} /> : null}
       {r ? <ResultTable result={r} /> : null}
       {r ? (
         <div className="msg-actions">
@@ -154,9 +138,10 @@ function AssistantBody({
 type ChatModeProps = {
   seedQuestion?: string;
   seedResult?: AskResponse | null;
+  resetEpoch?: number;
 };
 
-export default function ChatMode({ seedQuestion, seedResult }: ChatModeProps) {
+export default function ChatMode({ seedQuestion, seedResult, resetEpoch = 0 }: ChatModeProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(false);
@@ -165,6 +150,7 @@ export default function ChatMode({ seedQuestion, seedResult }: ChatModeProps) {
   const [openThoughts, setOpenThoughts] = useState<Record<string, boolean>>({});
   const skipSeed = useRef(false);
   const sessionId = useRef(newId());
+  const prevEpoch = useRef(resetEpoch);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -179,6 +165,18 @@ export default function ChatMode({ seedQuestion, seedResult }: ChatModeProps) {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
+
+  useEffect(() => {
+    if (prevEpoch.current === resetEpoch) return;
+    prevEpoch.current = resetEpoch;
+    skipSeed.current = true;
+    sessionId.current = newId();
+    setMessages([]);
+    setDraft("");
+    setError("");
+    setOpenDetails({});
+    setOpenThoughts({});
+  }, [resetEpoch]);
 
   async function send() {
     const q = draft.trim();
@@ -223,26 +221,14 @@ export default function ChatMode({ seedQuestion, seedResult }: ChatModeProps) {
 
   return (
     <div className="chat-shell">
-      <div className="chat-toolbar">
-        <button
-          type="button"
-          className="secondary"
-          onClick={() => {
-            skipSeed.current = true;
-            sessionId.current = newId();
-            setMessages([]);
-            setError("");
-            setOpenDetails({});
-            setOpenThoughts({});
-          }}
-        >
-          新对话
-        </button>
-      </div>
-
       <div className="chat-thread">
         <div className="chat-thread-inner">
-          {messages.length === 0 && !loading ? <p className="chat-empty">有什么想查的？</p> : null}
+          {messages.length === 0 && !loading ? (
+            <div className="chat-empty">
+              <p>有什么想查的？</p>
+              <p className="chat-empty-hint">例如：有多少年龄大于 30 岁的女性客户？</p>
+            </div>
+          ) : null}
           {messages.map((msg) =>
             msg.role === "user" ? (
               <div className="msg user" key={msg.id}>
@@ -276,7 +262,7 @@ export default function ChatMode({ seedQuestion, seedResult }: ChatModeProps) {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="输入消息"
+            placeholder="输入问题，Enter 发送"
             rows={1}
             disabled={loading}
             aria-label="消息"
