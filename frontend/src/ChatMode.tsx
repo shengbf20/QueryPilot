@@ -227,11 +227,11 @@ export default function ChatMode({ seedQuestion, seedResult, resetEpoch = 0 }: C
   return (
     <div className="chat-shell">
       <div className="chat-thread">
-        <div className="chat-thread-inner">
+        <div className={messages.length === 0 && !loading ? "chat-thread-inner is-empty" : "chat-thread-inner"}>
           {messages.length === 0 && !loading ? (
             <div className="chat-empty">
               <p>有什么想查的？</p>
-              <p className="chat-empty-hint">例如：有多少年龄大于 30 岁的女性客户？</p>
+              <p className="chat-empty-hint">用自然语言提问，我会查库并返回结果</p>
             </div>
           ) : null}
           {messages.map((msg) =>

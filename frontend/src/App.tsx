@@ -134,26 +134,19 @@ export default function App() {
             onChange={(e) => setQuestion(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder={clarifying ? "针对追问补充说明…" : "输入问题，Enter 发送"}
+            rows={1}
             aria-label="问句"
             disabled={loading}
           />
-          <div className="composer-actions">
-            <button type="button" onClick={onAsk} disabled={loading || !question.trim()}>
-              {loading ? "询问中…" : clarifying ? "追加说明" : "发送"}
-            </button>
-          </div>
-          {loading ? <p className="muted">正在查询…</p> : null}
-          {error ? (
-            <div className="alert" style={{ marginTop: "0.5rem" }}>
-              {error}
-            </div>
-          ) : null}
-          {statusHint ? <p className="muted">{statusHint}</p> : null}
+          <button type="button" onClick={onAsk} disabled={loading || !question.trim()}>
+            {loading ? "询问中…" : clarifying ? "追加说明" : "发送"}
+          </button>
         </section>
+        {loading ? <p className="muted lab-status">正在查询…</p> : null}
+        {error ? <div className="alert lab-status">{error}</div> : null}
+        {statusHint ? <p className="muted lab-status">{statusHint}</p> : null}
 
-        {!result ? (
-          <p className="empty">输入问题，Enter 发送。</p>
-        ) : (
+        {result ? (
           <>
             {result.stage === "clarify" || history.length > 0 ? (
               <section className="panel">
@@ -267,7 +260,7 @@ export default function App() {
               </section>
             ) : null}
           </>
-        )}
+        ) : null}
       </div>
 
       <div hidden={uiMode !== "chat"} className="chat-host">

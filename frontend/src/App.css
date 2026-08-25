@@ -99,48 +99,46 @@
 }
 
 .composer {
-  display: grid;
-  gap: 0.75rem;
-  padding: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.55rem 0.65rem 0.55rem 0.95rem;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 16px;
 }
 
-.composer textarea {
-  width: 100%;
-  min-height: 88px;
-  resize: vertical;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 0.75rem;
-  background: #fafbfc;
-}
-
-.composer-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
+.composer textarea,
+.composer textarea:focus,
+.composer textarea:focus-visible {
+  flex: 1;
+  min-height: 40px;
+  max-height: 160px;
+  resize: none;
+  border: 0;
+  padding: 0.5rem 0;
+  line-height: 1.45;
+  background: transparent;
+  outline: none;
 }
 
 .composer button {
+  flex-shrink: 0;
   border: 1px solid transparent;
-  border-radius: 8px;
-  padding: 0.5rem 0.9rem;
+  border-radius: 10px;
+  padding: 0.45rem 0.85rem;
   cursor: pointer;
   background: var(--accent);
   color: #fff;
 }
 
-.composer button.secondary {
-  background: var(--surface);
-  color: var(--ink);
-  border-color: var(--line);
+.composer button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
-.composer button:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
+.lab-status {
+  margin: 0.75rem 0 0;
 }
 
 .panel {
@@ -339,6 +337,13 @@
 .table-wrap {
   overflow: auto;
   max-height: min(70vh, 44rem);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.chat-table .table-wrap {
+  border: 0;
+  border-radius: 0;
 }
 
 table.result {
@@ -419,6 +424,8 @@ table.result th {
 }
 
 .chat-thread {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -426,25 +433,39 @@ table.result th {
 }
 
 .chat-thread-inner {
+  width: 100%;
   max-width: 768px;
   margin: 0 auto;
 }
 
+.chat-thread-inner.is-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .chat-empty {
-  margin: 5.5rem 0 0;
   text-align: center;
+  padding: 0 1rem 2rem;
 }
 
 .chat-empty p {
   margin: 0;
   color: var(--ink);
-  font-size: 1.2rem;
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.3;
 }
 
 .chat-empty-hint {
-  margin-top: 0.45rem !important;
+  margin-top: 0.55rem !important;
   color: var(--muted) !important;
-  font-size: 0.9rem !important;
+  font-size: 1rem !important;
+  font-weight: 400 !important;
+  letter-spacing: 0 !important;
+  line-height: 1.5 !important;
 }
 
 .msg {
@@ -607,7 +628,9 @@ table.result th {
   border-radius: 16px;
 }
 
-.chat-composer textarea {
+.chat-composer textarea,
+.chat-composer textarea:focus,
+.chat-composer textarea:focus-visible {
   flex: 1;
   min-height: 40px;
   max-height: 160px;
