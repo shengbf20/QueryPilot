@@ -48,7 +48,7 @@
 
 1. **核心大脑：高性能取数 Agent (High-Performance Agentic Engine)**
 
-抛弃耗时严重的传统多轮 LLM Tool 循环，采用**Python 原生隐式检索 + 单次 LLM SQL 生成 + 双层确定性安全围栏**的高性能 Pipeline 架构，实现业务意图拆解、SQL 规划生成与结果自动纠错。
+默认问数走**Python 原生隐式检索 + 单次 LLM SQL 生成 + 双层确定性安全围栏**的快路径 Pipeline（`ask()`），避免传统多轮 Tool 循环的时延。并列一条强 Agent 工具循环（`querypilot.agentic.run`），复用同一套剪枝 / 围栏 / 执行函数，**不折进** `ask()`。入口分发见下文「双路径」。
 2. **神经系统：可持续运营的 AI 友好元数据知识库 (Metadata Engine)**  
 包含指标树（Metric Tree）、数据表拓扑关联图（Join-Graph）与枚举值字典（Value Descriptor），解决自然语言与底层数据结构之间的转化鸿沟，支持业务人员后续可持续运营与口径扩展。
 3. **检验标尺：基于 Execution Match 的自动化评测与人机复核平台 (Eval & Human-in-the-Loop Workbench)**  
@@ -60,7 +60,7 @@
 
 ## 二、 高性能 Agent 执行工作流架构
 
-为解决传统 Agent “工具调用耗时长”与“复杂查询依赖多轮交互”的瓶颈，系统采用**单次 LLM 主驱动 + 代码级预处理/后校验**的工作流。端到端入口为 `querypilot.agent.pipeline.ask()`（CLI `querypilot ask` / HTTP `POST /api/ask`），**一次调用对应一次** `PipelineResult` **输出**（澄清后的追问是下一次调用，经 `history` 衔接）。
+为解决传统 Agent “工具调用耗时长”与“复杂查询依赖多轮交互”的瓶颈，**默认快路径**采用**单次 LLM 主驱动 + 代码级预处理/后校验**。端到端入口为 `querypilot.agent.pipeline.ask()`（CLI `querypilot ask` / HTTP `POST /api/ask`），**一次调用对应一次** `PipelineResult` **输出**（澄清后的追问是下一次调用，经 `history` 衔接）。对话页与 `querypilot ask --mode agent` 走并列的强 Agent，返回同一套 `PipelineResult`。
 
 ### 输入 → 输出契约
 
@@ -161,7 +161,49 @@
 - **L1 与 L2 分步执行**：L1 失败直接终止，不会进入 L2。
 - **L2 纠错不回到「步骤 1 剪枝」**：仅在 L2 内部完成「EXPLAIN 失败 → 一次 LLM 纠错 → L1 → 再 EXPLAIN」；全程 LLM 调用上限为 **生成 1 次 + 纠错 1 次**（Few-Shot 短路与 Cache 命中时可为 0 次）。
 - **步骤 6 探针与步骤 7 缓存**：原文档未体现；探针不阻止返回数据，缓存只写入围栏通过的成功路径。
-- **步骤 0b 意图围栏 / 澄清出口**：恶意指令在剪枝前拒绝（`stage=safety`）；需求不清时生成步可停在 `stage=clarify`（空 SQL），由 CLI/对话带 `history` 再调一次 `ask()`。仍不是多轮 Tool/ReAct。
+- **步骤 0b 意图围栏 / 澄清出口**：恶意指令在剪枝前拒绝（`stage=safety`）；需求不清时生成步可停在 `stage=clarify`（空 SQL），由 CLI/对话带 `history` 再调一次 `ask()`。快路径仍不是多轮 Tool/ReAct；多轮工具循环只在并列的强 Agent 上。
+
+### 双路径：强 Agent 工具循环（`agentic.run`）
+
+与快路径**并列**，不改 `ask()` 编排。原则：复用函数（剪枝 / `generate_sql` / L1 / L2 / `execute` / 探针 / 意图围栏），不复用编排。两条入口都过同一套 `check_malicious_intent`。
+
+
+| 表面 | 快路径 | 强 Agent |
+| ---- | ------ | -------- |
+| CLI | `querypilot ask "..."` | `querypilot ask --mode agent [--session id] "..."` |
+| API | `POST /api/ask` 默认 `mode=fast` | `mode=agent` + 可选 `session_id` |
+| UI | 问数页 | 对话页（`mode=agent` + `sessionId`） |
+| 评测 | `eval --mode fast`（默认，只调 `ask()`） | `eval --mode agent`（每题独立 `session_id=eval-{id}`） |
+
+
+```
+[用户自然语言 question]
+       │
+       ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 意图围栏  check_malicious_intent（与快路径同一套）            │
+│     命中 → stage=safety，不进工具循环                         │
+└────────────────────────────┬────────────────────────────────┘
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│ SessionMemory（session_id 续接追加式 messages[]）            │
+│     首轮带剪枝 Schema + Few-Shot；续聊换题重新剪枝            │
+└────────────────────────────┬────────────────────────────────┘
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 预算化工具循环（每轮一个 JSON 工具，上限 6）                  │
+│     search_schema / run_sql / ask_user / finish             │
+│     run_sql：提交 SQL，成功回结果、失败回原因；L1/L2 在工具内 │
+│     消化，不写进提示词；失败可改 SQL 再跑                     │
+│     ask_user / finish / 预算耗尽 → 结束                      │
+└────────────────────────────┬────────────────────────────────┘
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 返回 PipelineResult；轨迹在 extras.agent_trace               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**实现锚点**：`querypilot/agentic/run.py`（入口）、`loop.py`（循环）、`tools.py`（工具包装）、`memory.py`（会话）。细节与收口见 `logs/10`、`logs/11`。
 
 ---
 
@@ -267,7 +309,8 @@ source/
 │   ├── __init__.py
 │   ├── config.py               # 统一配置（.env / 路径）
 │   ├── cli.py                  # CLI 入口
-│   ├── agent/                  # 取数 Agent Pipeline（阶段二）
+│   ├── agent/                  # 取数 Agent Pipeline（阶段二，ask()）
+│   ├── agentic/                # 强 Agent 工具循环（不折进 ask()）
 │   ├── metadata_engine/        # 元数据检索 & Schema 剪枝（阶段一）
 │   ├── safety/                 # 意图围栏 + L1 AST + L2 EXPLAIN（阶段二 / Extra3）
 │   ├── eval/                   # Execution Match + Extra3 安全拒绝匹配（阶段三）
@@ -299,7 +342,8 @@ source/
 | **目录**             | **对应阶段** | **职责**                     |
 | ------------------ | -------- | -------------------------- |
 | `metadata_engine/` | 阶段一      | 元数据加载、Join-Graph、Schema 剪枝 |
-| `agent/`           | 阶段二      | NL → SQL Pipeline          |
+| `agent/`           | 阶段二      | NL → SQL 快路径（`ask()`）   |
+| `agentic/`         | 阶段二并列   | 强 Agent 工具循环（`run()`） |
 | `safety/`          | 阶段二      | 意图围栏 + sqlglot + EXPLAIN |
 | `eval/`            | 阶段三      | EX 评测 + Extra3 安全拒绝 + Eval-Agent |
 | `frontend/`        | 阶段五      | 问数页 + 对话模式                |
@@ -310,7 +354,7 @@ source/
 ### 与各阶段的对应关系
 
 - 阶段一：metadata/ + metadata_engine/
-- 阶段二：agent/ + safety/
+- 阶段二：agent/ + safety/；强 Agent 并列在 agentic/（不折进 ask()）
 - 阶段三：eval/
 - 阶段五：frontend/ & api/
 
@@ -324,9 +368,47 @@ querypilot ask "有多少年龄大于30岁的女性客户？"
 
 # 或：python -m querypilot.cli ask "总资产超过100万的客户有多少人？"
 
-# 批量 Demo（5 条样例问句）
+# 强 Agent（对话页同一条路径；不走 ask()）
+querypilot ask --mode agent "帮我看看客户情况"
+
+# 批量 Demo（5 条样例问句，快路径）
 python scripts/demo_pipeline.py
 ```
+
+
+
+### 阶段三快速试用（Execution Match / Extra）
+
+默认 `--mode fast` 只调 `ask()`；`--mode agent` 走 `agentic.run`，每题独立会话，不经过 `ask()`。官方金标与 Few-Shot 问句相同，**保留**精确短路才反映「原题可秒过」。Extra / Extra2 是改写题，必须 `--no-exact-few-shot`，否则会虚高。Extra3 看意图围栏（拒绝 + 安全警告算对），与 Few-Shot 无关。全量复测命令与参数表见 `logs/11` §3。
+
+```powershell
+# 官方金标（保留精确 Few-Shot 短路）
+python -m querypilot.cli eval --mode fast  --path "data/Q&A.xlsx" --workers 4 --output "logs/eval_reports/gold_fast.json"
+python -m querypilot.cli eval --mode agent --path "data/Q&A.xlsx" --workers 4 --output "logs/eval_reports/gold_agent.json"
+
+# Extra36 / Extra2（关短路，fs=3）
+python -m querypilot.cli eval --mode fast  --path "data/extra/Q&A_all.xlsx"  --no-exact-few-shot --max-few-shots 3 --workers 4 --output "logs/eval_reports/extra36_fast.json"
+python -m querypilot.cli eval --mode agent --path "data/extra/Q&A_all.xlsx"  --no-exact-few-shot --max-few-shots 3 --workers 4 --output "logs/eval_reports/extra36_agent.json"
+python -m querypilot.cli eval --mode fast  --path "data/extra2/Q&A_all.xlsx" --no-exact-few-shot --max-few-shots 3 --workers 4 --output "logs/eval_reports/extra2_fast.json"
+python -m querypilot.cli eval --mode agent --path "data/extra2/Q&A_all.xlsx" --no-exact-few-shot --max-few-shots 3 --workers 4 --output "logs/eval_reports/extra2_agent.json"
+
+# Extra3（安全拒答；不必关短路）
+python -m querypilot.cli eval --mode fast  --path "data/extra3/Q&A_all.xlsx" --workers 4 --output "logs/eval_reports/extra3_fast.json"
+python -m querypilot.cli eval --mode agent --path "data/extra3/Q&A_all.xlsx" --workers 4 --output "logs/eval_reports/extra3_agent.json"
+
+# 可选：Extra36+Extra2 合并、消融 fs=0（见 logs/Summary.md）
+# python -m querypilot.cli eval --path "data/extra/Q&A_all.xlsx" --paths "data/extra2/Q&A_all.xlsx" --no-exact-few-shot --max-few-shots 0 --workers 4 --output "logs/eval_reports/extra76_fast_B_fs0.json"
+```
+
+
+| 参数 | 含义 |
+| ---- | ---- |
+| `--mode fast` / `agent` | 默认 fast 走 `ask()`；agent 走 `agentic.run` |
+| `--path` / `--paths` | 金标 xlsx；`--paths` 可重复，接在 `--path` 后合并 |
+| `--no-exact-few-shot` | 关掉「问句原文命中 Few-Shot 则直接回流 SQL」 |
+| `--max-few-shots N` | Prompt 里最多带 N 条相似样例（默认 3；`0` 为消融） |
+| `--workers N` | 并行评题，各开自己的 DuckDB；只缩短墙钟 |
+| `--output` | 报告 JSON；不加则写到 `logs/eval_reports/eval_*.json` |
 
 
 
@@ -354,6 +436,7 @@ python scripts/bench_pipeline.py --parallel --no-save
 querypilot serve --host 127.0.0.1 --port 8000
 
 # 终端 2：再启动 Chat UI（默认 http://127.0.0.1:5173，代理 /api → 8000）
+# 问数页走 ask()；对话页走 --mode agent
 cd frontend
 npm install
 npm run dev
