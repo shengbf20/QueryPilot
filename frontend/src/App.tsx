@@ -5,6 +5,7 @@ import ChatMode from "./ChatMode";
 import ExportMenu from "./ExportMenu";
 import { OverflowSql, ResultTableView } from "./Overflow";
 import type { AskResponse, HistoryTurn } from "./types";
+import { useComposerBox } from "./useComposerBox";
 
 const TIMING_STEPS: { key: keyof AskResponse["timing"]; label: string }[] = [
   { key: "prune_ms", label: "剪枝" },
@@ -25,6 +26,7 @@ export default function App() {
   const [statusHint, setStatusHint] = useState("");
   const [history, setHistory] = useState<HistoryTurn[]>([]);
   const [chatEpoch, setChatEpoch] = useState(0);
+  const { boxRef, taRef, resetSize } = useComposerBox(question);
 
   const clarifying = result?.stage === "clarify" || history.some((t) => t.role === "assistant");
   const hasProbe =
@@ -62,6 +64,7 @@ export default function App() {
         prior.push({ role: "assistant", content: data.message });
         setHistory(prior);
         setQuestion("");
+        resetSize();
       } else {
         setHistory([]);
       }
@@ -128,8 +131,9 @@ export default function App() {
 
       <div hidden={uiMode !== "lab"} className="lab-host">
         <p className="lab-lead">用自然语言提问，生成只读 SQL 并返回结果表。</p>
-        <section className="composer">
+        <div className="composer" ref={boxRef}>
           <textarea
+            ref={taRef}
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             onKeyDown={onKeyDown}
@@ -138,10 +142,12 @@ export default function App() {
             aria-label="问句"
             disabled={loading}
           />
-          <button type="button" onClick={onAsk} disabled={loading || !question.trim()}>
-            {loading ? "询问中…" : clarifying ? "追加说明" : "发送"}
-          </button>
-        </section>
+          <div className="composer-bar">
+            <button type="button" onClick={onAsk} disabled={loading || !question.trim()}>
+              {loading ? "询问中…" : clarifying ? "追加说明" : "发送"}
+            </button>
+          </div>
+        </div>
         {loading ? <p className="muted lab-status">正在查询…</p> : null}
         {error ? <div className="alert lab-status">{error}</div> : null}
         {statusHint ? <p className="muted lab-status">{statusHint}</p> : null}

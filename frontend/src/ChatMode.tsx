@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { ApiError, postAsk } from "./api";
+import ChatSidebar from "./ChatSidebar";
+import { loadStore, newChatId, saveStore, titleFromMessages, upsertThread } from "./chatStore";
 import ExportMenu from "./ExportMenu";
 import { OverflowSql, ResultTableView } from "./Overflow";
 import { summarizeAsk } from "./summarize";
-import type { AskResponse, ChatMessage, HistoryTurn } from "./types";
+import { useComposerBox } from "./useComposerBox";
+import type { AskResponse, ChatMessage, ChatThread, HistoryTurn } from "./types";
 
 const TIMING_STEPS: { key: keyof AskResponse["timing"]; label: string }[] = [
   { key: "prune_ms", label: "剪枝" },
@@ -16,7 +19,7 @@ const TIMING_STEPS: { key: keyof AskResponse["timing"]; label: string }[] = [
 ];
 
 function newId(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  return newChatId();
 }
 
 function toHistory(messages: ChatMessage[]): HistoryTurn[] {
@@ -143,18 +146,37 @@ type ChatModeProps = {
   resetEpoch?: number;
 };
 
+function clearComposer(
+  setDraft: (v: string) => void,
+  setError: (v: string) => void,
+  setHint: (v: string) => void,
+  setOpenDetails: (v: Record<string, boolean>) => void,
+  setOpenThoughts: (v: Record<string, boolean>) => void,
+) {
+  setDraft("");
+  setError("");
+  setHint("");
+  setOpenDetails({});
+  setOpenThoughts({});
+}
+
 export default function ChatMode({ seedQuestion, seedResult, resetEpoch = 0 }: ChatModeProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [initial] = useState(loadStore);
+  const restored = initial.threads.find((t) => t.id === initial.activeId) ?? initial.threads[0];
+  const [threads, setThreads] = useState<ChatThread[]>(initial.threads);
+  const [activeId, setActiveId] = useState(restored?.id ?? newId());
+  const [messages, setMessages] = useState<ChatMessage[]>(restored?.messages ?? []);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [hint, setHint] = useState("");
   const [openDetails, setOpenDetails] = useState<Record<string, boolean>>({});
   const [openThoughts, setOpenThoughts] = useState<Record<string, boolean>>({});
-  const skipSeed = useRef(false);
-  const sessionId = useRef(newId());
+  const skipSeed = useRef(Boolean(restored?.messages.length));
   const prevEpoch = useRef(resetEpoch);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const { boxRef, taRef, resetSize, onGripPointerDown } = useComposerBox(draft);
 
   useEffect(() => {
     if (skipSeed.current || messages.length > 0 || !seedResult || !seedQuestion) return;
@@ -170,16 +192,77 @@ export default function ChatMode({ seedQuestion, seedResult, resetEpoch = 0 }: C
   }, [messages, loading]);
 
   useEffect(() => {
+    if (!messages.length) {
+      saveStore({ activeId, threads });
+      return;
+    }
+    setThreads((prev) => {
+      const existing = prev.find((t) => t.id === activeId);
+      if (existing && existing.messages === messages) return prev;
+      const next = upsertThread(prev, {
+        id: activeId,
+        title: titleFromMessages(messages),
+        updatedAt: Date.now(),
+        messages,
+      });
+      saveStore({ activeId, threads: next });
+      return next;
+    });
+  }, [messages, activeId]);
+
+  function resetThread() {
+    if (loading) return;
+    skipSeed.current = true;
+    if (!messages.length) return;
+    const id = newId();
+    setActiveId(id);
+    setMessages([]);
+    clearComposer(setDraft, setError, setHint, setOpenDetails, setOpenThoughts);
+    resetSize();
+    saveStore({ activeId: id, threads });
+  }
+
+  function openThread(id: string) {
+    if (id === activeId || loading) return;
+    const t = threads.find((x) => x.id === id);
+    if (!t) return;
+    skipSeed.current = true;
+    setActiveId(id);
+    setMessages(t.messages);
+    clearComposer(setDraft, setError, setHint, setOpenDetails, setOpenThoughts);
+    resetSize();
+    saveStore({ activeId: id, threads });
+    if (typeof window !== "undefined" && window.innerWidth <= 800) setSidebarOpen(false);
+  }
+
+  function deleteThread(id: string) {
+    if (loading && id === activeId) return;
+    const next = threads.filter((t) => t.id !== id);
+    setThreads(next);
+    if (id !== activeId) {
+      saveStore({ activeId, threads: next });
+      return;
+    }
+    skipSeed.current = true;
+    const fallback = next[0];
+    if (fallback) {
+      setActiveId(fallback.id);
+      setMessages(fallback.messages);
+      saveStore({ activeId: fallback.id, threads: next });
+    } else {
+      const fresh = newId();
+      setActiveId(fresh);
+      setMessages([]);
+      saveStore({ activeId: fresh, threads: next });
+    }
+    clearComposer(setDraft, setError, setHint, setOpenDetails, setOpenThoughts);
+    resetSize();
+  }
+
+  useEffect(() => {
     if (prevEpoch.current === resetEpoch) return;
     prevEpoch.current = resetEpoch;
-    skipSeed.current = true;
-    sessionId.current = newId();
-    setMessages([]);
-    setDraft("");
-    setError("");
-    setHint("");
-    setOpenDetails({});
-    setOpenThoughts({});
+    resetThread();
   }, [resetEpoch]);
 
   async function send() {
@@ -190,13 +273,14 @@ export default function ChatMode({ seedQuestion, seedResult, resetEpoch = 0 }: C
     const next = [...messages, userMsg];
     setMessages(next);
     setDraft("");
+    resetSize();
     setLoading(true);
     setError("");
     setHint("");
     try {
       const data = await postAsk(q, toHistory(messages), {
         mode: "agent",
-        sessionId: sessionId.current,
+        sessionId: activeId,
       });
       setMessages([
         ...next,
@@ -225,7 +309,25 @@ export default function ChatMode({ seedQuestion, seedResult, resetEpoch = 0 }: C
   }
 
   return (
-    <div className="chat-shell">
+    <div className="chat-layout">
+      <ChatSidebar
+        open={sidebarOpen}
+        threads={threads}
+        activeId={activeId}
+        onToggle={() => setSidebarOpen((v) => !v)}
+        onNew={resetThread}
+        onOpen={openThread}
+        onDelete={deleteThread}
+      />
+      {sidebarOpen ? (
+        <button
+          type="button"
+          className="chat-sidebar-mask"
+          aria-label="关闭历史"
+          onClick={() => setSidebarOpen(false)}
+        />
+      ) : null}
+      <div className="chat-shell">
       <div className="chat-thread">
         <div className={messages.length === 0 && !loading ? "chat-thread-inner is-empty" : "chat-thread-inner"}>
           {messages.length === 0 && !loading ? (
@@ -271,8 +373,20 @@ export default function ChatMode({ seedQuestion, seedResult, resetEpoch = 0 }: C
       </div>
 
       <div className="chat-composer-wrap">
-        <div className="chat-composer">
+        <div
+          className="chat-composer"
+          ref={(el) => {
+            boxRef.current = el;
+          }}
+        >
+          <button
+            type="button"
+            className="chat-composer-grip"
+            aria-label="向上拖动加高输入框"
+            onPointerDown={onGripPointerDown}
+          />
           <textarea
+            ref={taRef}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={onKeyDown}
@@ -281,10 +395,13 @@ export default function ChatMode({ seedQuestion, seedResult, resetEpoch = 0 }: C
             disabled={loading}
             aria-label="消息"
           />
-          <button type="button" onClick={() => void send()} disabled={loading || !draft.trim()}>
-            发送
-          </button>
+          <div className="chat-composer-bar">
+            <button type="button" onClick={() => void send()} disabled={loading || !draft.trim()}>
+              发送
+            </button>
+          </div>
         </div>
+      </div>
       </div>
     </div>
   );

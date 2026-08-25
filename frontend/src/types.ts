@@ -30,6 +30,13 @@ export type ChatMessage = {
   result?: AskResponse;
 };
 
+export type ChatThread = {
+  id: string;
+  title: string;
+  updatedAt: number;
+  messages: ChatMessage[];
+};
+
 export type AskResponse = {
   ok: boolean;
   question: string;
