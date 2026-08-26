@@ -3,6 +3,7 @@ import "./App.css";
 import { ApiError, postAsk } from "./api";
 import ChatMode from "./ChatMode";
 import ExportMenu from "./ExportMenu";
+import SettingsPanel from "./SettingsPanel";
 import { OverflowSql, ResultTableView } from "./Overflow";
 import type { AskResponse, HistoryTurn } from "./types";
 import { useComposerBox } from "./useComposerBox";
@@ -26,6 +27,7 @@ export default function App() {
   const [statusHint, setStatusHint] = useState("");
   const [history, setHistory] = useState<HistoryTurn[]>([]);
   const [chatEpoch, setChatEpoch] = useState(0);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const { boxRef, taRef, resetSize } = useComposerBox(question);
 
   const clarifying = result?.stage === "clarify" || history.some((t) => t.role === "assistant");
@@ -96,6 +98,15 @@ export default function App() {
         <div className="header-row">
           <h1>QueryPilot</h1>
           <div className="header-actions">
+            <button
+              type="button"
+              className="header-ghost"
+              aria-haspopup="dialog"
+              aria-expanded={settingsOpen}
+              onClick={() => setSettingsOpen(true)}
+            >
+              设置
+            </button>
             {uiMode === "chat" ? (
               <button
                 type="button"
@@ -276,6 +287,7 @@ export default function App() {
           resetEpoch={chatEpoch}
         />
       </div>
+      <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );
 }

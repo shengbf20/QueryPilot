@@ -44,3 +44,34 @@ export async function postAsk(
   return (await resp.json()) as AskResponse;
 }
 
+export type LlmSettings = {
+  api_key_set: boolean;
+  api_key_masked: string;
+  base_url: string;
+  model: string;
+};
+
+export async function getSettings(): Promise<LlmSettings> {
+  const resp = await fetch("/api/settings");
+  if (!resp.ok) {
+    throw new ApiError(await readErrorMessage(resp), resp.status);
+  }
+  return (await resp.json()) as LlmSettings;
+}
+
+export async function putSettings(body: {
+  api_key?: string;
+  base_url?: string;
+  model?: string;
+}): Promise<LlmSettings> {
+  const resp = await fetch("/api/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    throw new ApiError(await readErrorMessage(resp), resp.status);
+  }
+  return (await resp.json()) as LlmSettings;
+}
+

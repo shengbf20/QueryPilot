@@ -10,7 +10,8 @@ from urllib.parse import quote
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse, Response
 
-from querypilot.api.schemas import AskRequest, ExportRequest, HealthResponse
+from querypilot.api.llm_settings import apply_llm_settings, current_llm_settings
+from querypilot.api.schemas import AskRequest, ExportRequest, HealthResponse, LlmSettingsUpdate
 from querypilot.api.serialize import pipeline_result_to_api_dict
 
 router = APIRouter()
@@ -19,6 +20,27 @@ router = APIRouter()
 @router.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     return HealthResponse(status="ok")
+
+
+@router.get("/api/settings")
+def api_settings_get() -> JSONResponse:
+    return JSONResponse(
+        content=current_llm_settings(),
+        media_type="application/json; charset=utf-8",
+    )
+
+
+@router.put("/api/settings")
+def api_settings_put(body: LlmSettingsUpdate) -> JSONResponse:
+    payload = apply_llm_settings(
+        api_key=body.api_key,
+        base_url=body.base_url,
+        model=body.model,
+    )
+    return JSONResponse(
+        content=payload,
+        media_type="application/json; charset=utf-8",
+    )
 
 
 @router.post("/api/ask")

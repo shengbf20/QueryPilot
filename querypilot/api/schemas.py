@@ -31,3 +31,16 @@ class ExportRequest(BaseModel):
 
 class HealthResponse(BaseModel):
     status: str = "ok"
+
+
+class LlmSettingsResponse(BaseModel):
+    api_key_set: bool
+    api_key_masked: str = ""
+    base_url: str
+    model: str
+
+
+class LlmSettingsUpdate(BaseModel):
+    api_key: str | None = None
+    base_url: str | None = None
+    model: str | None = None
