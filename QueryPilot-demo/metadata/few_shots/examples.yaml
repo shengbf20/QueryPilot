@@ -1,0 +1,255 @@
+# Few-shot CoT examples for NL2SQL (marketing analytics)
+# Curated / HITL reflux — ranked by question overlap at prompt time (not file order alone).
+# Extra 评测原文不得出现在此；改写回流见 candidates_extra.yaml（Step 5）。
+
+examples:
+  - question: 有多少年龄大于30岁的女性客户？
+    rationale: 客户属性在 ads_cust_info_d；性别用枚举码过滤；单表聚合无需 CTE。
+    sql: |
+      SELECT COUNT(*) AS cnt
+      FROM ads_cust_info_d
+      WHERE cust_age > 30
+        AND gender_cd = '5000003'
+
+  - question: 总资产超过100万的客户有多少人？
+    rationale: 总资产=nm_tot_aset+fc_pur_aset；客户与资产按 pty_id 关联，不用 data_dt 做 Join；未要求「最新」时可用固定快照；多表聚合用 CTE。
+    sql: |
+      WITH aset AS (
+        SELECT
+          pty_id,
+          coalesce(nm_tot_aset, 0) + coalesce(fc_pur_aset, 0) AS total_aset
+        FROM dws_cust_aset_d
+        WHERE data_dt = '20260331'
+      )
+      SELECT COUNT(*) AS cnt
+      FROM ads_cust_info_d AS c
+      JOIN aset AS a ON c.pty_id = a.pty_id
+      WHERE a.total_aset > 1000000
+
+  - question: 不同客户年龄段资产分布（小于30；30到50；50到60；大于60）
+    rationale: 分桶标签用 <30/[30,50)/[50,60)/[60,)；资产快照 20260331；只输出年龄段与资产合计两列，勿加客户数。
+    sql: |
+      SELECT
+        CASE
+          WHEN cust_age < 30 THEN '<30'
+          WHEN cust_age >= 30 AND cust_age < 50 THEN '[30,50)'
+          WHEN cust_age >= 50 AND cust_age < 60 THEN '[50,60)'
+          WHEN cust_age >= 60 THEN '[60,)'
+        END AS cust_age_type,
+        SUM(coalesce(b.nm_tot_aset, 0) + coalesce(b.fc_pur_aset, 0)) AS aset
+      FROM ads_cust_info_d AS a
+      LEFT JOIN dws_cust_aset_d AS b
+        ON a.pty_id = b.pty_id AND b.data_dt = '20260331'
+      WHERE a.data_dt = '20260531'
+      GROUP BY 1
+
+  - question: 26年Q1交易过招商银行，且Q1末普通账户持有中国平安的客户有哪些
+    rationale: 输出 pty_id 列表而非 COUNT；产品名经 dim_product.prdt_name；持仓快照 20260331 且 sys_source='nm'。
+    sql: |
+      WITH cust_tran AS (
+        SELECT t.pty_id
+        FROM dwd_cust_tran_d AS t
+        JOIN dim_product AS p ON t.prdt_id = p.prdt_id
+        WHERE t.data_dt BETWEEN '20260101' AND '20260331'
+          AND p.prdt_name = '招商银行'
+          AND p.prdt_type_name = 'A股'
+        GROUP BY t.pty_id
+      )
+      SELECT a.pty_id
+      FROM cust_tran AS a
+      INNER JOIN dwd_cust_hold_d AS h ON a.pty_id = h.pty_id
+      INNER JOIN dim_product AS p2 ON h.prdt_id = p2.prdt_id
+      WHERE h.data_dt = '20260331'
+        AND h.sys_source = 'nm'
+        AND p2.prdt_name = '中国平安'
+        AND p2.prdt_type_name = 'A股'
+
+  - question: 26年Q1日均资产大于30万的客户，股票交易量大于10万的，其持有的产品属于哪些产品大类
+    rationale: HITL 回流金标结构；日均分母用 DATE 字面量；股票交易 up_prdt_type_id='PT040000'；最终三列 up_prdt_type_name/prdt_type_name/sum(mkt_val)。
+    sql: |
+      WITH cust_avg_30 AS (
+        SELECT
+          pty_id,
+          ROUND(
+            SUM(coalesce(nm_tot_aset, 0) + coalesce(fc_pur_aset, 0))
+              / ((DATE '2026-03-31' - DATE '2026-01-01')::INTEGER + 1),
+            2
+          ) AS avg_aset
+        FROM dws_cust_aset_d
+        GROUP BY pty_id
+        HAVING SUM(coalesce(nm_tot_aset, 0) + coalesce(fc_pur_aset, 0))
+          / ((DATE '2026-03-31' - DATE '2026-01-01')::INTEGER + 1) > 300000
+      ),
+      cust_tran AS (
+        SELECT a.pty_id, SUM(b.buy_amt) + SUM(b.sell_amt) AS tran_amt
+        FROM dws_cust_aset_d AS a
+        LEFT JOIN dwd_cust_tran_d AS b
+          ON a.pty_id = b.pty_id
+         AND b.data_dt BETWEEN '20260101' AND '20260331'
+        INNER JOIN dim_product AS c
+          ON b.prdt_id = c.prdt_id AND c.up_prdt_type_id = 'PT040000'
+        GROUP BY a.pty_id
+        HAVING SUM(b.buy_amt) + SUM(b.sell_amt) > 100000
+      )
+      SELECT
+        c.up_prdt_type_name,
+        c.prdt_type_name,
+        SUM(mkt_val) AS mkt_val
+      FROM cust_tran AS a
+      INNER JOIN dwd_cust_hold_d AS b
+        ON a.pty_id = b.pty_id AND b.data_dt = '20260331'
+      INNER JOIN dim_product AS c ON b.prdt_id = c.prdt_id
+      GROUP BY c.prdt_type_name, c.up_prdt_type_name
+
+  - question: 分公司和营业部的客户省份分布统计
+    rationale: 题面同时含分公司与营业部+省份，输出 up_org_name、org_name、prov_name、city_name 与人数；先 Join dim_branch 再按名称分组。
+    sql: |
+      SELECT
+        b.up_org_name,
+        b.org_name,
+        a.prov_name,
+        a.city_name,
+        COUNT(*) AS cnt
+      FROM ads_cust_info_d AS a
+      INNER JOIN dim_branch AS b ON a.org_id = b.org_id
+      GROUP BY b.up_org_name, b.org_name, a.prov_name, a.city_name
+
+  - question: 查询26年1月10日到26年2月15日期间，科创板交易量大于25万的客户营业部分布情况
+    rationale: 科创板用 prdt_type_name（二级）；交易量=buy+sell（子查询别名 trade_amt，非物理列）；本题官方金标含分公司+营业部两列，输出 up_org_name、org_name、trade_amt。
+    sql: |
+      SELECT
+        c.up_org_name,
+        c.org_name,
+        SUM(b.trade_amt) AS trade_amt
+      FROM ads_cust_info_d AS a
+      INNER JOIN (
+        SELECT
+          t.pty_id,
+          SUM(t.buy_amt) + SUM(t.sell_amt) AS trade_amt
+        FROM dwd_cust_tran_d AS t
+        INNER JOIN dim_product AS p
+          ON t.prdt_id = p.prdt_id
+         AND p.prdt_type_name = '科创板'
+        WHERE t.data_dt BETWEEN '20260110' AND '20260215'
+        GROUP BY t.pty_id
+        HAVING SUM(t.buy_amt) + SUM(t.sell_amt) > 250000
+      ) AS b ON a.pty_id = b.pty_id
+      LEFT JOIN dim_branch AS c ON a.org_id = c.org_id
+      GROUP BY c.up_org_name, c.org_name
+
+  - question: 钻石卡男性客户，年龄大于40岁，持有比亚迪市值超过1000元，他在26年Q1的盈亏情况
+    rationale: 无独立盈亏表。筛钻石卡男客户+比亚迪持仓后，输出6列 pty_id/bgn_aset/end_aset/aset_in/aset_out/aset_pft；期初资产日20260101、期末20260331；流入流出对 dws_cust_fin_d 的 cash/tran/assign 求和；aset_pft = 期末(nm+fc) - (期初nm+期初fc) + 流出 - 流入，期初两项加括号。别名全局唯一，避免 CTE/外层复用同一别名。
+    sql: |
+      WITH custinfo AS (
+        SELECT pty_id
+        FROM ads_cust_info_d
+        WHERE cust_lvl_cd = '1000001'
+          AND gender_cd = '5000002'
+          AND cust_age > 40
+      ),
+      prdtinfo AS (
+        SELECT h.pty_id, SUM(h.mkt_val) AS mkt_val
+        FROM dwd_cust_hold_d AS h
+        INNER JOIN dim_product AS p ON h.prdt_id = p.prdt_id
+        WHERE p.prdt_name = '比亚迪'
+          AND h.data_dt = '20260331'
+          AND EXISTS (SELECT 1 FROM custinfo AS z WHERE h.pty_id = z.pty_id)
+        GROUP BY h.pty_id
+        HAVING SUM(h.mkt_val) > 1000
+      )
+      SELECT
+        q.pty_id,
+        coalesce(aset_bgn.nm_tot_aset, 0) + coalesce(aset_bgn.fc_pur_aset, 0) AS bgn_aset,
+        coalesce(aset_end.nm_tot_aset, 0) + coalesce(aset_end.fc_pur_aset, 0) AS end_aset,
+        coalesce(fin.aset_in, 0) AS aset_in,
+        coalesce(fin.aset_out, 0) AS aset_out,
+        coalesce(aset_end.nm_tot_aset, 0) + coalesce(aset_end.fc_pur_aset, 0)
+          - (coalesce(aset_bgn.nm_tot_aset, 0) + coalesce(aset_bgn.fc_pur_aset, 0))
+          + coalesce(fin.aset_out, 0) - coalesce(fin.aset_in, 0) AS aset_pft
+      FROM prdtinfo AS q
+      LEFT JOIN dws_cust_aset_d AS aset_end
+        ON q.pty_id = aset_end.pty_id AND aset_end.data_dt = '20260331'
+      LEFT JOIN dws_cust_aset_d AS aset_bgn
+        ON q.pty_id = aset_bgn.pty_id AND aset_bgn.data_dt = '20260101'
+      LEFT JOIN (
+        SELECT
+          pty_id,
+          SUM(cash_in) + SUM(tran_in) + SUM(assign_in) AS aset_in,
+          SUM(cash_out) + SUM(tran_out) + SUM(assign_out) AS aset_out
+        FROM dws_cust_fin_d
+        WHERE data_dt BETWEEN '20260101' AND '20260331'
+        GROUP BY pty_id
+      ) AS fin ON q.pty_id = fin.pty_id
+
+  # --- Extra Step 5 paraphrases (from candidates_extra.yaml; ≠ eval verbatim) ---
+
+  - question: 统计职业为非公职离退休且性别为女的客户人数
+    rationale: 职业优先 prof_cd='7000032'（code_type_id=700）；若用 describe 须原文「非公职 离/退休」。性别可用 gender_cd='5000003'。单表编码过滤即可。
+    sql: |
+      SELECT COUNT(*) AS cnt
+      FROM ads_cust_info_d
+      WHERE gender_cd = '5000003'
+        AND prof_cd = '7000032'
+
+  - question: 在信用账户上持有证券三六零的客户人数是多少
+    rationale: 信用账户用 sys_source='fc'；产品名经 dim_product.prdt_name；持仓快照默认 20260331；COUNT(DISTINCT pty_id)。
+    sql: |
+      SELECT COUNT(DISTINCT h.pty_id) AS cnt
+      FROM dwd_cust_hold_d AS h
+      JOIN dim_product AS p ON h.prdt_id = p.prdt_id
+      WHERE h.data_dt = '20260331'
+        AND h.sys_source = 'fc'
+        AND p.prdt_name = '三六零'
+
+  - question: 26年Q1买卖佣金合计超过一百元的客户人数是多少
+    rationale: 期间合计用 GROUP BY pty_id HAVING SUM(buy_rake+sell_rake)；人数在外层 COUNT(*)；禁止日级 rake>阈值后再聚合。
+    sql: |
+      SELECT COUNT(*) AS cnt
+      FROM (
+        SELECT pty_id
+        FROM dwd_cust_tran_d
+        WHERE data_dt BETWEEN '20260101' AND '20260331'
+        GROUP BY pty_id
+        HAVING SUM(coalesce(buy_rake, 0) + coalesce(sell_rake, 0)) > 100
+      ) AS t
+
+  - question: 列出26年一季度现金流入合计大于十万的客户号
+    rationale: dws_cust_fin_d；HAVING SUM(cash_in)；「有哪些/列出客户」只投影 pty_id，勿附带合计列。
+    sql: |
+      SELECT pty_id
+      FROM dws_cust_fin_d
+      WHERE data_dt BETWEEN '20260101' AND '20260331'
+      GROUP BY pty_id
+      HAVING SUM(coalesce(cash_in, 0)) > 100000
+      ORDER BY pty_id
+
+  - question: 截止2026年3月31日，一级分类为开放式基金的持仓市值总和是多少
+    rationale: 开放式基金是一级大类：up_prdt_type_id='PT050000'（或 up_prdt_type_name）；禁止 prdt_type_name='开放式基金'（二级无此名）。
+    sql: |
+      SELECT SUM(coalesce(h.mkt_val, 0)) AS mkt_sum
+      FROM dwd_cust_hold_d AS h
+      JOIN dim_product AS p ON h.prdt_id = p.prdt_id
+      WHERE h.data_dt = '20260331'
+        AND p.up_prdt_type_id = 'PT050000'
+
+  - question: 快照20260331上本币资产不超过50万但本外币合计总资产超过50万的客户人数
+    rationale: 资产列仅 dws_cust_aset_d；本币=nm_tot_aset，总资产=nm+fc；两门槛须分别引用，勿混为同一表达式。
+    sql: |
+      SELECT COUNT(*) AS cnt
+      FROM dws_cust_aset_d
+      WHERE data_dt = '20260331'
+        AND coalesce(nm_tot_aset, 0) <= 500000
+        AND coalesce(nm_tot_aset, 0) + coalesce(fc_pur_aset, 0) > 500000
+
+  - question: 按营业部汇总26年一季度客户买卖金额合计（只需营业部名称与金额）
+    rationale: 仅问营业部时投影 org_name + trade_amt（buy+sell）；不要加 up_org_name；别名用 trade_amt。
+    sql: |
+      SELECT
+        b.org_name,
+        SUM(coalesce(t.buy_amt, 0) + coalesce(t.sell_amt, 0)) AS trade_amt
+      FROM dwd_cust_tran_d AS t
+      JOIN ads_cust_info_d AS c ON t.pty_id = c.pty_id
+      JOIN dim_branch AS b ON c.org_id = b.org_id
+      WHERE t.data_dt BETWEEN '20260101' AND '20260331'
+      GROUP BY b.org_name
+      ORDER BY trade_amt DESC, b.org_name

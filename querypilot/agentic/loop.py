@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from openai import OpenAI
 
 from querypilot.agent.prompt import find_exact_few_shot, load_few_shots
 from querypilot.agentic.protocol import MAX_LLM_TURNS, SYSTEM_PROMPT, parse_agent_tools
-from querypilot.agentic.tools import AgentWorkspace, dispatch_tool, run_sql
+from querypilot.agentic.tools import AgentWorkspace, add_timing, dispatch_tool, run_sql
 from querypilot.llm.chat import chat
 
 
@@ -116,12 +117,14 @@ def run_loop(
     active = client or ws.client
 
     for turn in range(1, max_turns + 1):
+        t0 = time.perf_counter()
         result = chat(
             thread,
             temperature=0.0,
             max_tokens=2500,
             client=active,
         )
+        add_timing(ws, "generate_ms", t0)
         raw = result.content
         thread.append({"role": "assistant", "content": raw})
         try:

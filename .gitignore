@@ -6,6 +6,8 @@ venv/
 *.db
 *.duckdb
 /db/
+!QueryPilot-demo/db/
+!QueryPilot-demo/db/*.duckdb
 .pytest_cache/
 .ruff_cache/
 logs/eval_reports/

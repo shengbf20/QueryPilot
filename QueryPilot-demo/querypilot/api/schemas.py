@@ -1,0 +1,46 @@
+"""Pydantic request/response models for the HTTP API."""
+
+from __future__ import annotations
+
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field
+
+
+class HistoryTurn(BaseModel):
+    role: str = Field(..., pattern="^(user|assistant)$")
+    content: str = Field(..., min_length=1)
+
+
+class AskRequest(BaseModel):
+    question: str = Field(..., min_length=1)
+    use_cache: bool | None = None
+    max_rows: int = Field(default=1000, ge=1, le=100_000)
+    use_parallel: bool = False
+    history: list[HistoryTurn] = Field(default_factory=list)
+    mode: Literal["fast", "agent"] = "fast"
+    session_id: str = ""
+
+
+class ExportRequest(BaseModel):
+    columns: list[str]
+    rows: list[list[Any]] = Field(default_factory=list)
+    filename: str = "querypilot_export.csv"
+    format: Literal["csv", "xlsx"] = "csv"
+
+
+class HealthResponse(BaseModel):
+    status: str = "ok"
+
+
+class LlmSettingsResponse(BaseModel):
+    api_key_set: bool
+    api_key_masked: str = ""
+    base_url: str
+    model: str
+
+
+class LlmSettingsUpdate(BaseModel):
+    api_key: str | None = None
+    base_url: str | None = None
+    model: str | None = None

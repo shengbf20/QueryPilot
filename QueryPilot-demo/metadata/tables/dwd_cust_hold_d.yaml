@@ -1,0 +1,40 @@
+table: dwd_cust_hold_d
+alias: 客户持仓表
+layer: dwd
+description: 客户持有产品日事实表，记录每日持仓份额与市值。
+primary_key: [data_dt, pty_id, prdt_id, sys_source, ccy]
+usage:
+  - 查询客户持有哪些产品
+  - 持仓市值统计与产品偏好分析
+notes:
+  - sys_source 区分普通账户(nm)与信用账户(fc)
+  - ccy 为币种：0人民币、1美元、2港币
+  - 数据库中最新数据日期为 20260331，其他日期查询结果可能为 0；「最新持仓日」「最新快照日」均指 20260331
+columns:
+  - name: data_dt
+    type: VARCHAR
+    description: 日期
+    format: YYYYMMDD
+  - name: pty_id
+    type: VARCHAR
+    description: 客户号
+  - name: prdt_id
+    type: VARCHAR
+    description: 产品ID
+    aliases: [产品编号]
+  - name: sys_source
+    type: VARCHAR
+    description: 系统来源
+    enum_ref: sys_source
+  - name: ccy
+    type: VARCHAR
+    description: 币种代码（0人民币、1美元、2港币），查询时直接使用代码，不要转换为中文名称
+    enum_ref: ccy
+  - name: hold_cnt
+    type: DECIMAL
+    description: 持有份额
+    aliases: [持仓数量, 持有数量]
+  - name: mkt_val
+    type: DECIMAL
+    description: 持有市值
+    aliases: [持仓市值, 市值]

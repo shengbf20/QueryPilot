@@ -1,0 +1,75 @@
+# Schema 裁剪知识（原 schema_pruner.py 硬编码常量外置）
+#
+# 边界约定：本文件只放「领域知识」（哪张表是什么身份、什么词带出什么表）；
+# 裁剪机制（打分、权重、top_k、Join-Graph 扩张）仍在 querypilot/metadata_engine/schema_pruner.py。
+# 修改本文件后需重启进程（含 serve / chat）才生效。
+
+# 兜底表：所有表都未命中 min_score 时的默认种子
+default_fallback_table: ads_cust_info_d
+
+# 事实表：问题提到客户线索词且种子含事实表/组织维表时，自动补客户枢纽表
+fact_tables:
+  - dws_cust_aset_d
+  - dws_cust_fin_d
+  - dwd_cust_hold_d
+  - dwd_cust_tran_d
+  - dwd_cust_mgr_rel_d
+
+# 组织维表：与事实表一同参与客户枢纽注入判断
+org_dim_tables:
+  - dim_branch
+
+# 客户线索词：触发客户枢纽保护
+customer_cues:
+  - 客户
+  - 人群
+  - 用户
+  - 投资者
+
+# 禁止自动作为种子的表（编码字典类，仅按需经强匹配注入）
+auto_seed_blocklist:
+  - dim_public
+
+# 领域触发词 -> 强制补表（分数不够 top_k 也能进种子）
+domain_seed_cues:
+  - cues: [交易, 买入, 卖出, 买卖, 交易量, 交易额, 成交额, 客户交易]
+    table: dwd_cust_tran_d
+  - cues: [持有, 持仓, 市值]
+    table: dwd_cust_hold_d
+  - cues: [产品, 产品大类, 产品类型, 产品二级分类, 产品一级分类, 基金, 证券, 科创板, 创业板, 主板, A股, 持仓, 持有]
+    table: dim_product
+  - cues: [盈亏, 损益, 入金, 出金, 净流入, 资金流入, 资金流出]
+    table: dws_cust_fin_d
+  - cues: [盈亏, 损益, 收益情况]
+    table: dws_cust_aset_d
+  - cues: [服务经理, 客户经理, 经理]
+    table: dim_mgr_info
+  - cues: [服务关系, 名下客户, 服务经理, 客户经理]
+    table: dwd_cust_mgr_rel_d
+
+# 问题侧同义扩展：命中触发词后向检索文本追加补充词
+query_expansions:
+  - triggers: [女性, 男性, 男女]
+    terms: [性别]
+  - triggers: [购买, 买过, 买了, 买入过]
+    terms: [买入, 交易]
+  - triggers: [卖过, 卖掉, 卖出过]
+    terms: [卖出, 交易]
+  - triggers: [持有]
+    terms: [持仓]
+  - triggers: [入金, 出金, 净流入]
+    terms: [资金, 现金流入, 现金流出]
+  - triggers: [盈亏, 损益, 收益情况]
+    terms: [资金, 资产, 资金流入, 资金流出]
+  - triggers: [AUM, 净资产, 资产规模]
+    terms: [总资产, 资产]
+  - triggers: [会员, VIP, 高净值]
+    terms: [客户等级]
+  - triggers: [交易量, 交易过, 交易额, 成交额]
+    terms: [交易, 买入, 卖出, 客户交易]
+  - triggers: [科创板, 创业板, 主板, A股]
+    terms: [产品类型, 产品二级分类, 产品]
+  - triggers: [产品大类, 产品类型, 证券]
+    terms: [产品, 产品大类, 产品一级分类]
+  - triggers: [客户经理]
+    terms: [服务经理, 服务关系]

@@ -1,0 +1,24 @@
+table: dwd_cust_mgr_rel_d
+alias: 客户服务关系表
+layer: dwd
+description: 客户与服务经理的服务关系事实表，一名客户一名服务经理（模拟数据，见 data_sim/README.md）。
+primary_key: [data_dt, pty_id]
+usage:
+  - 查询某客户的服务经理
+  - 圈选某服务经理名下客户（资产/交易/持仓分析）
+columns:
+  - name: data_dt
+    type: VARCHAR
+    description: 日期
+    format: YYYYMMDD
+  - name: pty_id
+    type: VARCHAR
+    description: 客户号
+    aliases: [客户ID, 客户编号]
+  - name: mgr_id
+    type: VARCHAR
+    description: 服务经理ID
+    aliases: [服务经理编号, 经理ID]
+notes:
+  - data_dt 为快照日期 20260531，与客户信息表口径一致
+  - 与客户信息表 Join 只用 pty_id；与事实表（资产/交易/持仓）关联也只用 pty_id，勿加 data_dt

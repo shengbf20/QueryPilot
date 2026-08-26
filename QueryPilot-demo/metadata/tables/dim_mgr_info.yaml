@@ -1,0 +1,32 @@
+table: dim_mgr_info
+alias: 服务经理信息表
+layer: dim
+description: 服务经理维表，记录服务经理归属营业部与职级（模拟数据，见 data_sim/README.md）。
+primary_key: [mgr_id]
+usage:
+  - 按服务经理统计名下客户数与资产
+  - 服务经理归属营业部分析
+notes:
+  - mgr_name 已按官方口径脱敏（如「张*明」），过滤用 mgr_id 或 mgr_name 均可
+  - 与营业部表通过 org_id 关联；与客户表无直接关联，须经客户服务关系表
+columns:
+  - name: mgr_id
+    type: VARCHAR
+    description: 服务经理ID
+    aliases: [服务经理编号, 经理ID]
+  - name: mgr_name
+    type: VARCHAR
+    description: 服务经理姓名（脱敏）
+    aliases: [服务经理, 经理姓名, 客户经理姓名]
+  - name: org_id
+    type: VARCHAR
+    description: 所属营业部ID
+    aliases: [所属营业部]
+  - name: mgr_title
+    type: VARCHAR
+    description: 服务经理职级
+    aliases: [职级]
+    enum_values:
+      VP: VP
+      高级经理: 高级经理
+      经理: 经理

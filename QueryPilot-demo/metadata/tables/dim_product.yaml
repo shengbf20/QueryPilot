@@ -1,0 +1,42 @@
+table: dim_product
+alias: 产品信息表
+layer: dim
+description: 产品属性维表，包含产品名称、代码及一/二级分类。
+primary_key: [prdt_id]
+usage:
+  - 产品名称查询与产品分类筛选
+  - 与持仓/交易表通过 prdt_id 关联
+notes:
+  - prdt_type_name 为二级分类（如 科创板、A股、ETF、LOF）；up_prdt_type_name 为一级大类（如 股票、开放式基金、债券）
+  - 股票一级 up_prdt_type_id=PT040000；开放式基金=PT050000；债券=PT030000；勿把「开放式基金」写成 prdt_type_name
+  - 按证券名称过滤用 prdt_name（如 招商银行、中国平安、比亚迪），必须 JOIN 本表，勿臆造 prdt_id
+columns:
+  - name: prdt_id
+    type: VARCHAR
+    description: 产品ID（内部使用，用于表关联）
+    aliases: [产品编号]
+  - name: prdt_name
+    type: VARCHAR
+    description: 产品名称
+    aliases: [产品, 证券名称, 基金名称]
+  - name: sor_prdt_id
+    type: VARCHAR
+    description: 产品代码（外部来源，用户查询时常用）
+    aliases: [证券代码, 产品代码]
+  - name: market_id
+    type: VARCHAR
+    description: 市场ID
+  - name: prdt_type_id
+    type: VARCHAR
+    description: 产品二级分类ID
+  - name: prdt_type_name
+    type: VARCHAR
+    description: 产品二级分类名称
+    aliases: [产品二级分类, 产品类型]
+  - name: up_prdt_type_id
+    type: VARCHAR
+    description: 产品一级分类ID
+  - name: up_prdt_type_name
+    type: VARCHAR
+    description: 产品一级分类名称
+    aliases: [产品一级分类, 产品大类]

@@ -156,6 +156,13 @@ def test_agentic_tool_loop_count_query(metadata):
     assert out.row_count == 1
     tools = [s["tool"] for s in out.extras["agent_trace"]]
     assert tools == ["search_schema", "run_sql", "finish"]
+    assert out.timing.prune_ms > 0
+    assert out.timing.generate_ms > 0
+    assert out.timing.l1_ms > 0
+    assert out.timing.l2_ms > 0
+    assert out.timing.execute_ms > 0
+    assert out.timing.probe_ms > 0
+    assert out.timing.total_ms >= out.timing.prune_ms
 
 
 @requires_db
@@ -352,6 +359,15 @@ def test_session_followup_reprunes_before_run_sql(metadata):
     assert "dws_cust_aset_d" in second.sql
     user_turn = client2.chat.completions.snapshots[0][-1]["content"]
     assert "dws_cust_aset_d" in user_turn
+    assert first.timing.prune_ms > 0
+    assert first.timing.generate_ms > 0
+    assert second.timing.prune_ms > 0
+    assert second.timing.generate_ms > 0
+    assert second.timing.l1_ms > 0
+    assert second.timing.l2_ms > 0
+    assert second.timing.execute_ms > 0
+    assert second.timing.probe_ms > 0
+    assert second.timing.total_ms >= second.timing.prune_ms
 
 
 def test_api_ask_agent_dispatches():

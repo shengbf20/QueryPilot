@@ -106,6 +106,7 @@ def run(
     try:
         control = run_loop(ws, client=client, max_turns=max_turns, messages=thread)
     except Exception as exc:  # noqa: BLE001
+        timing = ws.timing
         timing.total_ms = _elapsed_ms(t_all)
         return PipelineResult(
             ok=False,
@@ -126,6 +127,7 @@ def run(
         "session_id": sid,
         "agent_trace": control.get("trace") or [],
     }
+    timing = ws.timing
     timing.total_ms = _elapsed_ms(t_all)
 
     if control["kind"] == "clarify":
