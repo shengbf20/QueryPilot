@@ -16,6 +16,11 @@ from querypilot.eval import (
     load_qa_cases_many,
 )
 
+requires_db = pytest.mark.skipif(
+    not get_settings().db_path.exists(),
+    reason="competition.duckdb not imported yet",
+)
+
 
 def test_default_qa_path_points_under_data():
     path = default_qa_path()
@@ -195,3 +200,36 @@ def test_load_competition_qa_xlsx():
     assert "select" in cases[0].gold_sql.lower()
     assert all("select" in c.gold_sql.lower() or "with" in c.gold_sql.lower() for c in cases)
     assert all(c.difficulty is None for c in cases)
+
+
+def test_official_q6_gold_intersects_avg_and_tran():
+    """Q6 金标须同时使用日均资产与股票交易两个 CTE（题面交集）。"""
+    cases = load_qa_cases()
+    q6 = next(
+        c
+        for c in cases
+        if "日均资产大于30万" in c.question and "股票交易量大于10万" in c.question
+    )
+    sql = " ".join(q6.gold_sql.lower().split())
+    assert "cust_avg_30" in sql
+    assert "join cust_tran" in sql
+    assert "from dwd_cust_tran_d" in sql
+
+
+@requires_db
+def test_official_q6_gold_matches_few_shot():
+    from querypilot.agent.prompt import load_few_shots
+    from querypilot.db import execute
+    from querypilot.eval.execution_match import compare_results
+
+    q6 = next(c for c in load_qa_cases() if c.id == "6")
+    shot = next(
+        s
+        for s in load_few_shots()
+        if "日均资产大于30万" in s.question and "股票交易量大于10万" in s.question
+    )
+    gold = execute(q6.gold_sql, max_rows=200)
+    pred = execute(shot.sql, max_rows=200)
+    assert gold.row_count == 24
+    mr = compare_results(pred.columns, pred.rows, gold.columns, gold.rows)
+    assert mr.matched, mr.reason

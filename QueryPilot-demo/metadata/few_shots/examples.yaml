@@ -65,7 +65,7 @@ examples:
         AND p2.prdt_type_name = 'A股'
 
   - question: 26年Q1日均资产大于30万的客户，股票交易量大于10万的，其持有的产品属于哪些产品大类
-    rationale: HITL 回流金标结构；日均分母用 DATE 字面量；股票交易 up_prdt_type_id='PT040000'；最终三列 up_prdt_type_name/prdt_type_name/sum(mkt_val)。
+    rationale: 日均资产与股票交易取交集；日均分母用 DATE 字面量并限制 Q1 窗口；股票交易 up_prdt_type_id='PT040000'；最终三列 up_prdt_type_name/prdt_type_name/sum(mkt_val)。
     sql: |
       WITH cust_avg_30 AS (
         SELECT
@@ -76,26 +76,26 @@ examples:
             2
           ) AS avg_aset
         FROM dws_cust_aset_d
+        WHERE data_dt BETWEEN '20260101' AND '20260331'
         GROUP BY pty_id
         HAVING SUM(coalesce(nm_tot_aset, 0) + coalesce(fc_pur_aset, 0))
           / ((DATE '2026-03-31' - DATE '2026-01-01')::INTEGER + 1) > 300000
       ),
       cust_tran AS (
-        SELECT a.pty_id, SUM(b.buy_amt) + SUM(b.sell_amt) AS tran_amt
-        FROM dws_cust_aset_d AS a
-        LEFT JOIN dwd_cust_tran_d AS b
-          ON a.pty_id = b.pty_id
-         AND b.data_dt BETWEEN '20260101' AND '20260331'
+        SELECT t.pty_id, SUM(coalesce(t.buy_amt, 0)) + SUM(coalesce(t.sell_amt, 0)) AS tran_amt
+        FROM dwd_cust_tran_d AS t
         INNER JOIN dim_product AS c
-          ON b.prdt_id = c.prdt_id AND c.up_prdt_type_id = 'PT040000'
-        GROUP BY a.pty_id
-        HAVING SUM(b.buy_amt) + SUM(b.sell_amt) > 100000
+          ON t.prdt_id = c.prdt_id AND c.up_prdt_type_id = 'PT040000'
+        WHERE t.data_dt BETWEEN '20260101' AND '20260331'
+        GROUP BY t.pty_id
+        HAVING SUM(coalesce(t.buy_amt, 0)) + SUM(coalesce(t.sell_amt, 0)) > 100000
       )
       SELECT
         c.up_prdt_type_name,
         c.prdt_type_name,
         SUM(mkt_val) AS mkt_val
-      FROM cust_tran AS a
+      FROM cust_avg_30 AS a
+      INNER JOIN cust_tran AS t ON a.pty_id = t.pty_id
       INNER JOIN dwd_cust_hold_d AS b
         ON a.pty_id = b.pty_id AND b.data_dt = '20260331'
       INNER JOIN dim_product AS c ON b.prdt_id = c.prdt_id
