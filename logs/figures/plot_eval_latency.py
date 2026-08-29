@@ -173,12 +173,20 @@ def draw() -> Path:
 
     fig.subplots_adjust(left=0.10, right=0.985, top=0.90, bottom=0.20)
 
-    out = OUT_DIR / "eval_latency_boxplot.png"
-    fig.savefig(out, dpi=300, facecolor="white")
-    fig.savefig(OUT_DIR / "eval_latency_boxplot.pdf", facecolor="white")
+    png, pdf = _save_pdf_and_png(fig, OUT_DIR / "eval_latency_boxplot")
     plt.close(fig)
-    return out
+    return png, pdf
+
+
+def _save_pdf_and_png(fig, stem: Path) -> tuple[Path, Path]:
+    png = stem.with_suffix(".png")
+    pdf = stem.with_suffix(".pdf")
+    fig.savefig(pdf, facecolor="white")
+    fig.savefig(png, dpi=300, facecolor="white")
+    return png, pdf
 
 
 if __name__ == "__main__":
-    print(draw())
+    png, pdf = draw()
+    print(png)
+    print(pdf)
