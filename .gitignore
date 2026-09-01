@@ -8,6 +8,8 @@ venv/
 /db/
 !QueryPilot-demo/db/
 !QueryPilot-demo/db/*.duckdb
+# Official competition CSVs — local only, not redistributed
+/data/*.csv
 .pytest_cache/
 .ruff_cache/
 logs/eval_reports/

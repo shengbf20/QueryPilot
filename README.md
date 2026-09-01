@@ -328,7 +328,7 @@ source/
 ├── scripts/                    # 运维脚本（已有）
 ├── tests/                      # 单元测试
 ├── frontend/                   # Chat UI：问数页 + 对话模式
-├── data/                       # 原始 CSV；Q&A / extra / extra2 / extra3（只读）
+├── data/                       # 官方 CSV 本地自备（不入库）；公开 Q&A / extra*
 ├── db/                         # DuckDB 文件（gitignore）
 ├── pyproject.toml              # 项目定义 & 依赖
 └── requirements.txt
