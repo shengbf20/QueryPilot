@@ -11,16 +11,16 @@ import numpy as np
 OUT_DIR = Path(__file__).resolve().parent
 
 # (label, fast_correct, agent_correct); denom = 7+36+40+24
-DENOM = 107
+DENOM = 207
 ROWS = (
-    ("DS-V4-Flash", 107, 107),
-    ("GPT-5.6-Luna", 106, 107),
-    ("MiniMax-M3", 105, 106),
-    ("Kimi-K2.5", 105, 106),
-    ("mimo-v2.5-pro", 106, 107),
-    ("GLM-5.3", 106, 107),
-    ("Qwen3.8-Max", 107, 107),
-    ("Gemini-3.1-Pro", 107, 107),
+    ("DS-V4-Flash", 207, 207),
+    ("GPT-5.6-Luna", 206, 207),
+    ("MiniMax-M3", 205, 206),
+    ("Kimi-K2.5", 205, 206),
+    ("mimo-v2.5-pro", 206, 207),
+    ("GLM-5.3", 206, 207),
+    ("Qwen3.8-Max", 207, 207),
+    ("Gemini-3.1-Pro", 207, 207),
 )
 
 FAST_FACE = "#1B4332"

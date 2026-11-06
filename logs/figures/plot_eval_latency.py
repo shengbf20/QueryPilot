@@ -119,7 +119,7 @@ def draw() -> Path:
         q3 = float(np.percentile(vals, 75))
         ax.text(
             pos,
-            max(median + 0.22, q3 + 0.18),
+            max(median + 0.55, q3 + 0.45),
             f"{median:.1f}",
             ha="center",
             va="bottom",
@@ -133,11 +133,11 @@ def draw() -> Path:
     ax.tick_params(axis="x", length=0, pad=4)
     ax.set_ylabel("单题总耗时（秒）", fontsize=12, labelpad=7)
     ax.set_xlim(0.70, 4.00)
-    ax.set_ylim(0, 15.2)
+    ax.set_ylim(0, 32)
     ax.set_title("评测单题总耗时", fontsize=15, pad=11, fontweight="medium")
 
-    ax.yaxis.set_major_locator(mticker.MultipleLocator(2))
-    ax.yaxis.set_minor_locator(mticker.MultipleLocator(1))
+    ax.yaxis.set_major_locator(mticker.MultipleLocator(4))
+    ax.yaxis.set_minor_locator(mticker.MultipleLocator(2))
     ax.yaxis.set_tick_params(labelsize=10)
     ax.grid(axis="y", which="major", color="#95D5B2", linestyle="--", linewidth=0.55, alpha=0.55)
     ax.grid(axis="y", which="minor", color="#D8F3DC", linestyle=":", linewidth=0.45, alpha=0.75)
