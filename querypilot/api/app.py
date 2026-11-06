@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from querypilot.api.catalog_routes import router as catalog_router
 from querypilot.api.onboarding_routes import router as onboarding_router
 from querypilot.api.routes import router
 
@@ -26,5 +27,6 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(router)
+    app.include_router(catalog_router)
     app.include_router(onboarding_router)
     return app

@@ -2,6 +2,7 @@ import { useMemo, useState, type KeyboardEvent } from "react";
 import "./App.css";
 import { ApiError, postAsk } from "./api";
 import ChatMode from "./ChatMode";
+import TableMode from "./TableMode";
 import ExportMenu from "./ExportMenu";
 import SettingsPanel from "./SettingsPanel";
 import { OverflowSql, ResultTableView } from "./Overflow";
@@ -19,7 +20,7 @@ const TIMING_STEPS: { key: keyof AskResponse["timing"]; label: string }[] = [
 ];
 
 export default function App() {
-  const [uiMode, setUiMode] = useState<"lab" | "chat">("lab");
+  const [uiMode, setUiMode] = useState<"lab" | "chat" | "tables">("lab");
   const [question, setQuestion] = useState("");
   const [result, setResult] = useState<AskResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -134,6 +135,15 @@ export default function App() {
                 onClick={() => setUiMode("chat")}
               >
                 对话
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={uiMode === "tables"}
+                className={uiMode === "tables" ? "active" : ""}
+                onClick={() => setUiMode("tables")}
+              >
+                表格
               </button>
             </div>
           </div>
@@ -278,6 +288,10 @@ export default function App() {
             ) : null}
           </>
         ) : null}
+      </div>
+
+      <div hidden={uiMode !== "tables"} className="catalog-page">
+        <TableMode />
       </div>
 
       <div hidden={uiMode !== "chat"} className="chat-host">

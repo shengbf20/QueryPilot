@@ -59,6 +59,44 @@ export async function getSettings(): Promise<LlmSettings> {
   return (await resp.json()) as LlmSettings;
 }
 
+export type CatalogTable = {
+  name: string;
+  alias: string;
+  layer: string;
+  description: string;
+  column_count: number;
+  row_count: number;
+};
+
+export type CatalogDetail = CatalogTable & {
+  primary_key: string[];
+  grain: string;
+  notes: string[];
+  columns: { name: string; description: string }[];
+  offset: number;
+  limit: number;
+  data_columns: string[];
+  rows: unknown[][];
+};
+
+export async function getCatalog(): Promise<CatalogTable[]> {
+  const resp = await fetch("/api/catalog/tables");
+  if (!resp.ok) {
+    throw new ApiError(await readErrorMessage(resp), resp.status);
+  }
+  const data = (await resp.json()) as { tables: CatalogTable[] };
+  return data.tables;
+}
+
+export async function getCatalogTable(name: string, offset: number, limit = 50): Promise<CatalogDetail> {
+  const params = new URLSearchParams({ offset: String(offset), limit: String(limit) });
+  const resp = await fetch(`/api/catalog/tables/${encodeURIComponent(name)}?${params}`);
+  if (!resp.ok) {
+    throw new ApiError(await readErrorMessage(resp), resp.status);
+  }
+  return (await resp.json()) as CatalogDetail;
+}
+
 export async function putSettings(body: {
   api_key?: string;
   base_url?: string;
