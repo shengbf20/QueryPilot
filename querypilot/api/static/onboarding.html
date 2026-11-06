@@ -3,145 +3,262 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>QueryPilot · 新表登记问卷</title>
+<title>QueryPilot · 新表登记</title>
 <style>
   :root {
-    --bg: #f5f6f8; --card: #ffffff; --line: #e2e5ea;
-    --text: #1f2430; --muted: #6b7280; --accent: #2f6fed;
-    --ok: #16a34a; --bad: #dc2626; --warn: #d97706;
+    --bg: #f4f6f8;
+    --surface: #ffffff;
+    --ink: #1a2332;
+    --muted: #5c6b7a;
+    --line: #d8e0e8;
+    --accent: #0f6e56;
+    --accent-soft: #e6f4ef;
+    --warn: #9a3412;
+    --warn-soft: #ffedd5;
+    --bad: #b42318;
+    --bad-soft: #fdecec;
+    --ok: #0f6e56;
   }
   * { box-sizing: border-box; }
   body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font: 14px/1.65 "Segoe UI", "Microsoft YaHei", sans-serif;
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 14px/1.5 "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   }
-  .wrap { max-width: 860px; margin: 0 auto; padding: 32px 20px 80px; }
-  h1 { font-size: 22px; margin: 0 0 4px; }
-  .sub { color: var(--muted); margin: 0 0 24px; }
+  button, input, textarea { font: inherit; color: inherit; }
+  button:focus-visible, input:focus-visible, textarea:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .top {
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+  }
+  .top-inner {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 14px 20px 12px;
+  }
+  h1 { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: 0; }
+  .sub { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 16px 20px 64px; }
   .card {
-    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
-    padding: 20px 24px; margin-bottom: 16px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px 16px 16px;
+    margin-bottom: 12px;
   }
-  .row { display: flex; gap: 10px; }
-  .row input[type=text] { flex: 1; }
-  input[type=text], textarea, select {
-    width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px;
-    font: inherit; background: #fff; color: var(--text);
+  .head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0 0 12px;
   }
-  input:focus, textarea:focus { outline: 2px solid #bcd3ff; border-color: var(--accent); }
-  textarea { resize: vertical; min-height: 60px; }
-  label { display: block; font-weight: 600; margin: 14px 0 6px; }
-  label .req { color: var(--bad); margin-left: 2px; }
-  .hint { color: var(--muted); font-size: 12.5px; margin: 2px 0 0; }
-  button {
-    padding: 9px 22px; border: none; border-radius: 6px; cursor: pointer;
-    font: inherit; font-weight: 600; background: var(--accent); color: #fff;
+  .head h2 { margin: 0; font-size: 15px; font-weight: 650; }
+  .lookup { display: flex; gap: 8px; align-items: center; }
+  .lookup input { flex: 1; }
+  input[type=text], textarea {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
   }
-  button.secondary { background: #eef2fa; color: var(--accent); }
-  button:disabled { opacity: .55; cursor: not-allowed; }
-  .cols { display: grid; grid-template-columns: 180px 1fr; gap: 8px 12px; align-items: center; }
-  .cols .cname { font-family: Consolas, monospace; font-size: 13px; color: var(--muted); }
+  input::placeholder, textarea::placeholder { color: #8a97a3; }
+  input:focus, textarea:focus { border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 64px; }
+  label.field {
+    display: block;
+    font-weight: 600;
+    font-size: 13px;
+    margin: 12px 0 4px;
+  }
+  .card label.field:first-of-type { margin-top: 0; }
+  .req { color: var(--bad); margin-left: 2px; }
+  button.primary {
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 8px 16px;
+    background: var(--accent);
+    color: #fff;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  button.primary.block { width: 100%; padding: 10px 16px; }
+  button.primary:disabled { opacity: 0.45; cursor: not-allowed; }
+  button.link {
+    border: 0;
+    padding: 0;
+    background: none;
+    color: var(--accent);
+    cursor: pointer;
+    font-size: 13px;
+  }
+  button.link:hover { text-decoration: underline; }
+  .help {
+    margin: -4px 0 12px;
+    padding: 8px 10px;
+    background: var(--accent-soft);
+    border-radius: 8px;
+    color: var(--ink);
+    font-size: 13px;
+  }
+  .help p { margin: 0 0 6px; }
+  .help p:last-child { margin: 0; }
+  .hidden { display: none; }
+  .cols { display: grid; grid-template-columns: 148px 1fr; gap: 8px 10px; align-items: center; }
+  .cname { font-size: 13px; color: var(--ink); word-break: break-all; }
   .edge {
-    display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px;
-    border: 1px solid var(--line); border-radius: 6px; margin-bottom: 6px; background: #fafbfc;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    margin: 0 0 8px;
+    background: #f7f9fb;
+    font-weight: 400;
+    cursor: pointer;
   }
-  .edge.checked { border-color: #9db9f5; background: #f2f6ff; }
-  .edge .meta { color: var(--muted); font-size: 12.5px; }
-  .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; }
-  .badge.high { background: #e3f5e9; color: var(--ok); }
-  .badge.medium { background: #fdf1de; color: var(--warn); }
-  .badge.dict { background: #e8f0fe; color: var(--accent); }
-  .enum-grid { display: grid; grid-template-columns: 140px 1fr; gap: 6px 10px; align-items: center; }
-  .enum-grid .val { font-family: Consolas, monospace; font-size: 13px; }
-  .report { list-style: none; padding: 0; margin: 8px 0 0; }
-  .report li { padding: 3px 0; }
+  .edge:last-child { margin-bottom: 0; }
+  .edge.checked { border-color: #9dcec0; background: var(--accent-soft); }
+  .edge input { margin-top: 3px; accent-color: var(--accent); }
+  .edge .meta { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
+  .badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 0 6px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    vertical-align: 1px;
+  }
+  .badge.high { background: #d8f3dc; color: var(--accent); }
+  .badge.medium { background: var(--warn-soft); color: var(--warn); }
+  .badge.low { background: #eef2f6; color: var(--muted); }
+  .enum-block { margin: 0 0 12px; }
+  .enum-block:last-child { margin-bottom: 0; }
+  .enum-title { margin: 0 0 6px; font-size: 13px; font-weight: 600; }
+  .enum-grid { display: grid; grid-template-columns: 120px 1fr; gap: 6px 8px; align-items: center; }
+  .val { font-size: 13px; color: var(--muted); word-break: break-all; }
+  .empty { margin: 0; color: var(--muted); font-size: 13px; }
+  .banner { display: none; margin-bottom: 12px; padding: 10px 12px; border-radius: 8px; font-size: 13px; }
+  .banner.error { display: block; background: var(--bad-soft); color: var(--bad); border: 1px solid #f5c2c2; }
+  .banner.info { display: block; background: var(--accent-soft); color: var(--accent); border: 1px solid #b7e4c7; }
+  .report { list-style: none; padding: 0; margin: 6px 0 12px; }
+  .report li { padding: 2px 0; font-size: 13px; }
   .report .ok::before { content: "✓ "; color: var(--ok); font-weight: 700; }
   .report .bad::before { content: "✗ "; color: var(--bad); font-weight: 700; }
-  .report .bad .detail { color: var(--bad); }
-  .banner { padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; display: none; }
-  .banner.error { display: block; background: #fdecec; color: var(--bad); border: 1px solid #f5c2c2; }
-  .banner.info { display: block; background: #e9f2ff; color: #1d4ed8; border: 1px solid #bcd3ff; }
+  .report .detail { color: var(--bad); }
+  .files { margin: 0 0 10px; font-size: 13px; word-break: break-all; }
   .spin {
-    display: inline-block; width: 14px; height: 14px; border: 2px solid #cbd5e1;
-    border-top-color: var(--accent); border-radius: 50%; animation: r 0.8s linear infinite;
-    vertical-align: -2px; margin-right: 6px;
+    display: inline-block; width: 12px; height: 12px; margin-right: 6px;
+    border: 2px solid rgba(255,255,255,.45); border-top-color: #fff;
+    border-radius: 50%; animation: r .8s linear infinite; vertical-align: -1px;
   }
   @keyframes r { to { transform: rotate(360deg); } }
-  .hidden { display: none; }
-  .section-title { font-size: 15px; font-weight: 700; margin: 22px 0 4px; padding-top: 10px; border-top: 1px dashed var(--line); }
-  .section-title:first-of-type { border-top: none; }
-  code.path { background: #f1f3f6; padding: 1px 6px; border-radius: 4px; font-size: 12.5px; }
 </style>
 </head>
 <body>
+<header class="top">
+  <div class="top-inner">
+    <h1>新表登记</h1>
+    <p class="sub">填写这张表的业务含义，提交后即可用于提问。</p>
+  </div>
+</header>
 <div class="wrap">
-  <h1>新表登记问卷</h1>
-  <p class="sub">
-    机器已探出结构、关联与枚举候选，并给出默认答案；你只需确认 / 修改 / 补填业务含义，
-    提交后自动完成：元数据落盘 → 注册表同步 → 校验与回归。
-  </p>
-
   <div id="banner" class="banner"></div>
 
   <div class="card">
-    <div class="row">
-      <input id="table" type="text" placeholder="表名（需已导入 DuckDB，如 dwd_cust_risk_assess_d）">
-      <button id="loadBtn" onclick="loadQuestionnaire()">生成问卷</button>
+    <div class="head">
+      <h2>选择表</h2>
+      <button type="button" class="link" data-help="help-load">说明</button>
     </div>
-    <p class="hint">表需先经 <code class="path">python scripts/add_table.py data_sim/[file] --import</code> 入库。</p>
+    <div id="help-load" class="help hidden">
+      <p>表需要已经导入本机数据库。把数据文件放进模拟数据目录后，用项目里的导入命令写入，再回到这里填写表名。</p>
+    </div>
+    <div class="lookup">
+      <input id="table" type="text" placeholder="表名，例如 dim_mgr_info">
+      <button id="loadBtn" class="primary" type="button" onclick="loadQuestionnaire()">生成问卷</button>
+    </div>
   </div>
 
   <form id="form" class="hidden" onsubmit="return submitForm(event)">
     <div class="card">
-      <div class="section-title">基本信息</div>
-
-      <label>这个表的名字叫什么？（业务别名）<span class="req">*</span></label>
-      <input id="alias" type="text" placeholder="如：客户风险测评表" required>
-      <p class="hint" id="q1hint"></p>
-
-      <label>简单描述一下这张表？<span class="req">*</span></label>
-      <textarea id="description" placeholder="一句话说明表的用途与内容" required></textarea>
-
-      <label>一行代表什么（粒度）？</label>
-      <input id="granularity" type="text">
-      <p class="hint">如：客户级 / 经理级 / 持仓级；作为 usage 首条进入表元数据。</p>
-
-      <label>必须触发这张表的关键词有哪些？<span class="req">*</span></label>
-      <input id="cues" type="text" placeholder="逗号分隔，如：风险测评,风险等级,风险偏好" required>
-      <p class="hint">用户问题里出现这些词 → 这张表强制入选（分数不够也进）。请给「提到这个词就是问这张表」的专属词，避免「客户」这类泛词。</p>
-
-      <label>有没有特殊口径要说明？（可选）</label>
-      <textarea id="notes" placeholder="如：data_dt 为快照日，与事实表不对齐，跨表 join 不要加 data_dt 条件"></textarea>
+      <div class="head">
+        <h2>基本信息</h2>
+        <button type="button" class="link" data-help="help-basic">说明</button>
+      </div>
+      <div id="help-basic" class="help hidden">
+        <p>关键词用逗号分隔。问句里出现这些词时会选中这张表，请写专属说法，不要用「客户」这类太宽的词。</p>
+        <p>一行是什么：例如一位客户、一位客户经理、一笔持仓。</p>
+        <p>补充说明用来记下容易弄错的口径，例如日期只是快照、和其他表关联时不要带上日期。</p>
+      </div>
+      <label class="field" for="alias">业务名称<span class="req">*</span></label>
+      <input id="alias" type="text" placeholder="例如：客户经理" required>
+      <label class="field" for="description">这张表是做什么的<span class="req">*</span></label>
+      <textarea id="description" placeholder="用一句话说明" required></textarea>
+      <label class="field" for="granularity">一行是什么</label>
+      <input id="granularity" type="text" placeholder="例如：一位客户经理">
+      <label class="field" for="cues">关键词<span class="req">*</span></label>
+      <input id="cues" type="text" placeholder="客户经理, 经理姓名" required>
+      <label class="field" for="notes">补充说明</label>
+      <textarea id="notes" placeholder="可选"></textarea>
     </div>
 
     <div class="card">
-      <div class="section-title">各列含义（每列必填，进 LLM prompt）</div>
+      <div class="head">
+        <h2>每列是什么意思</h2>
+        <button type="button" class="link" data-help="help-cols">说明</button>
+      </div>
+      <div id="help-cols" class="help hidden">
+        <p>左边是列名，右边用业务语言填写。每一列都要填。</p>
+      </div>
       <div id="columns" class="cols"></div>
     </div>
 
     <div class="card">
-      <div class="section-title">关联关系（勾选确认的 join 边，未勾选的候选将被丢弃）</div>
+      <div class="head">
+        <h2>和哪些表有关</h2>
+        <button type="button" class="link" data-help="help-edges">说明</button>
+      </div>
+      <div id="help-edges" class="help hidden">
+        <p>勾选要保留的关联，没勾的不会保存。百分比表示这列的取值有多少能在对方表里找到。标成「推荐」的会默认勾上。</p>
+      </div>
       <div id="edges"></div>
-      <p class="hint">包含率 = 新表值集对目标表值集的包含程度；同名+值域双重验证的候选默认勾选。</p>
     </div>
 
     <div class="card" id="enumCard">
-      <div class="section-title">枚举 / 字典列</div>
+      <div class="head">
+        <h2>编码是什么意思</h2>
+        <button type="button" class="link" data-help="help-enum">说明</button>
+      </div>
+      <div id="help-enum" class="help hidden">
+        <p>已经对上公共编码的列会直接列出含义。还没有对照的编码，请逐个填写中文意思。</p>
+      </div>
       <div id="enums"></div>
     </div>
 
     <div class="card">
-      <div class="section-title">验证</div>
-      <label>冒烟问句（提交后自动验证这句问话能选中新表）<span class="req">*</span></label>
-      <input id="smoke" type="text" placeholder="如：有多少激进型客户" required>
-      <p class="hint">问句需含上面的触发词或表别名，否则剪枝冒烟不命中。</p>
+      <div class="head">
+        <h2>试一句</h2>
+        <button type="button" class="link" data-help="help-smoke">说明</button>
+      </div>
+      <div id="help-smoke" class="help hidden">
+        <p>用一句真实问法试查这张表。句子里要带上上面的关键词或业务名称，提交后会检查能否选中它。</p>
+      </div>
+      <label class="field" for="smoke">用来检查的问句<span class="req">*</span></label>
+      <input id="smoke" type="text" placeholder="例如：有多少位客户经理" required>
     </div>
 
-    <button id="submitBtn" type="submit" style="width:100%; padding:12px;">提交注册</button>
+    <button id="submitBtn" class="primary block" type="submit">提交登记</button>
   </form>
 
   <div id="resultCard" class="card hidden">
-    <div class="section-title">注册结果</div>
+    <div class="head"><h2>登记结果</h2></div>
     <div id="resultBody"></div>
   </div>
 </div>
@@ -150,6 +267,14 @@
 "use strict";
 const $ = (id) => document.getElementById(id);
 const state = { questionnaire: null, edges: [] };
+
+document.querySelectorAll("button.link[data-help]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const panel = $(btn.dataset.help);
+    const open = panel.classList.toggle("hidden") === false;
+    btn.textContent = open ? "收起" : "说明";
+  });
+});
 
 function showBanner(kind, text, keep) {
   const b = $("banner");
@@ -179,25 +304,27 @@ async function loadQuestionnaire() {
     renderForm(data.questionnaire);
     $("form").classList.remove("hidden");
     $("resultCard").classList.add("hidden");
-    showBanner("info", "问卷已生成：请核对默认答案，补填必填项后提交。");
+    showBanner("info", "请核对下面的内容，补全必填项后提交。");
   } catch (exc) {
-    showBanner("error", "生成问卷失败：" + exc.message, true);
+    showBanner("error", "生成失败：" + exc.message, true);
   } finally {
     $("loadBtn").disabled = false;
     $("loadBtn").textContent = "生成问卷";
   }
 }
 
+function confidenceLabel(value) {
+  if (value === "high") return "推荐";
+  if (value === "medium") return "待确认";
+  return "较弱";
+}
+
 function renderForm(q) {
   const byId = {};
   q.questions.forEach((item) => { byId[item.id] = item; });
 
-  $("q1hint").textContent = "机械画像：" + (byId.Q1.default || "");
-
-  // Q3 粒度默认
   $("granularity").value = "";
 
-  // Q4 列含义
   const cols = $("columns");
   cols.innerHTML = "";
   byId.Q4.items.forEach((item) => {
@@ -207,29 +334,41 @@ function renderForm(q) {
     const input = document.createElement("input");
     input.type = "text";
     input.dataset.column = item.column;
-    input.placeholder = "这列是什么意思？";
+    input.placeholder = "这列表示什么";
     input.required = true;
-    // 默认答案：A2 骨架有 description（YYYYMMDD 格式说明等）则预填，否则留空强制输入
     input.value = item.default && !item.default.includes("（") ? item.default : "";
     cols.appendChild(name);
     cols.appendChild(input);
   });
 
-  // Q5 关联边
   const edges = $("edges");
   edges.innerHTML = "";
   state.edges = [];
-  byId.Q5.items.forEach((item) => {
+  const items = byId.Q5.items || [];
+  if (!items.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty";
+    empty.textContent = "没有发现可关联的列。";
+    edges.appendChild(empty);
+  }
+  items.forEach((item) => {
     const label = document.createElement("label");
     label.className = "edge";
     const cb = document.createElement("input");
     cb.type = "checkbox";
     cb.checked = item.confidence === "high" && item.containment >= 0.99;
     const text = document.createElement("div");
-    text.innerHTML =
-      "<code>" + item.column + "</code> → <code>" + item.target + "</code> " +
-      '<span class="badge ' + item.confidence + '">' + item.confidence + "</span> " +
-      '<span class="meta">包含率 ' + Math.round(item.containment * 100) + "% · " + item.edge_type + "</span>";
+    const title = document.createElement("div");
+    title.textContent = item.column + " → " + item.target;
+    const badge = document.createElement("span");
+    badge.className = "badge " + (item.confidence || "low");
+    badge.textContent = confidenceLabel(item.confidence);
+    title.appendChild(badge);
+    const meta = document.createElement("span");
+    meta.className = "meta";
+    meta.textContent = "取值能对上 " + Math.round(item.containment * 100) + "%";
+    text.appendChild(title);
+    text.appendChild(meta);
     cb.addEventListener("change", () => label.classList.toggle("checked", cb.checked));
     label.classList.toggle("checked", cb.checked);
     label.appendChild(cb);
@@ -238,7 +377,6 @@ function renderForm(q) {
     state.edges.push({ checkbox: cb, suggested_edge: item.suggested_edge });
   });
 
-  // Q6 枚举
   const enums = $("enums");
   enums.innerHTML = "";
   const q6items = byId.Q6.items || [];
@@ -247,10 +385,12 @@ function renderForm(q) {
   } else {
     $("enumCard").classList.remove("hidden");
     q6items.forEach((item) => {
-      const label = document.createElement("label");
-      label.textContent = item.column + "（" +
-        (item.kind === "dict" ? "已匹配字典: " + item.default : "待填编码含义") + "）";
-      enums.appendChild(label);
+      const block = document.createElement("div");
+      block.className = "enum-block";
+      const title = document.createElement("p");
+      title.className = "enum-title";
+      title.textContent = item.column + (item.kind === "dict" ? "（已有编码对照）" : "");
+      block.appendChild(title);
       if (item.kind !== "dict") {
         const grid = document.createElement("div");
         grid.className = "enum-grid";
@@ -262,22 +402,22 @@ function renderForm(q) {
           input.type = "text";
           input.dataset.enumColumn = item.column;
           input.dataset.enumValue = val;
-          input.placeholder = "含义";
+          input.placeholder = "中文含义";
           grid.appendChild(v);
           grid.appendChild(input);
         });
-        enums.appendChild(grid);
+        block.appendChild(grid);
       } else {
         const meta = document.createElement("p");
-        meta.className = "hint";
-        const pairs = Object.entries(item.values || {}).map(([k, v]) => k + "=" + v).join("，");
-        meta.textContent = "码值含义：" + pairs + "（将自动同步 value_descriptors）";
-        enums.appendChild(meta);
+        meta.className = "empty";
+        const pairs = Object.entries(item.values || {}).map(([k, v]) => k + " = " + v).join("，");
+        meta.textContent = pairs || "含义已对照，无需再填。";
+        block.appendChild(meta);
       }
+      enums.appendChild(block);
     });
   }
 
-  // Q7 notes 默认
   $("notes").value = byId.Q7.default && byId.Q7.default !== "无" ? byId.Q7.default : "";
 }
 
@@ -314,7 +454,7 @@ async function submitForm(event) {
   };
 
   $("submitBtn").disabled = true;
-  $("submitBtn").innerHTML = '<span class="spin"></span>注册中（落盘 + 同步 + 回归）…';
+  $("submitBtn").innerHTML = '<span class="spin"></span>正在保存…';
   try {
     const data = await api("/api/onboarding/register", {
       method: "POST",
@@ -322,37 +462,34 @@ async function submitForm(event) {
       body: JSON.stringify(body),
     });
     renderResult(data);
-    showBanner("info", data.ok ? "注册成功：元数据已生效（serve 进程内缓存已自动失效）。"
-                                : "注册完成但存在失败项，见下方报告。");
+    showBanner("info", data.ok ? "登记完成，可以用这张表提问了。" : "已保存，但有检查未通过，请看下方结果。");
   } catch (exc) {
-    showBanner("error", "注册失败：" + exc.message, true);
+    showBanner("error", "登记失败：" + exc.message, true);
   } finally {
     $("submitBtn").disabled = false;
-    $("submitBtn").textContent = "提交注册";
+    $("submitBtn").textContent = "提交登记";
   }
   return false;
 }
 
+function renderChecks(title, checks) {
+  const items = checks.map((c) =>
+    '<li class="' + (c.ok ? "ok" : "bad") + '">' + c.name +
+    (c.detail && !c.ok ? ' <span class="detail">' + c.detail + "</span>" : "") + "</li>"
+  ).join("");
+  return "<p class='enum-title'>" + title + "</p><ul class='report'>" + items + "</ul>";
+}
+
 function renderResult(data) {
   $("resultCard").classList.remove("hidden");
-  const parts = [];
-  parts.push("<p><b>写入文件：</b>" + data.files_written.map((f) => '<code class="path">' + f + "</code>").join("、") + "</p>");
-  parts.push("<p><b>A6 注册表同步</b></p><ul class='report'>");
-  data.sync.checks.forEach((c) => {
-    parts.push('<li class="' + (c.ok ? "ok" : "bad") + '">' + c.name +
-      (c.detail && !c.ok ? ' <span class="detail">' + c.detail + "</span>" : "") + "</li>");
-  });
-  parts.push("</ul><p><b>A7/A8 校验与回归</b></p><ul class='report'>");
-  data.regression.checks.forEach((c) => {
-    parts.push('<li class="' + (c.ok ? "ok" : "bad") + '">' + c.name +
-      (c.detail && !c.ok ? ' <span class="detail">' + c.detail + "</span>" : "") + "</li>");
-  });
-  parts.push("</ul>");
+  const files = (data.files_written || []).join("、");
+  let html = "<p class='files'>已写入：" + files + "</p>";
+  html += renderChecks("同步检查", data.sync.checks || []);
+  html += renderChecks("校验", data.regression.checks || []);
   if (data.cue_inherited) {
-    parts.push('<p class="hint">已自动挂剪枝触发词（domain_seed_cues）' +
-      (data.ok ? "；dwd/dws 层已入 fact_tables。" : "。") + "</p>");
+    html += "<p class='empty'>已记下关键词，提问时会优先考虑这张表。</p>";
   }
-  $("resultBody").innerHTML = parts.join("");
+  $("resultBody").innerHTML = html;
   $("resultCard").scrollIntoView({ behavior: "smooth" });
 }
 </script>
