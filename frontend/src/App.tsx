@@ -295,11 +295,7 @@ export default function App() {
       </div>
 
       <div hidden={uiMode !== "chat"} className="chat-host">
-        <ChatMode
-          seedQuestion={result?.question}
-          seedResult={result}
-          resetEpoch={chatEpoch}
-        />
+        <ChatMode resetEpoch={chatEpoch} />
       </div>
       <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>

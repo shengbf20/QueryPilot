@@ -141,8 +141,6 @@ function AssistantBody({
 }
 
 type ChatModeProps = {
-  seedQuestion?: string;
-  seedResult?: AskResponse | null;
   resetEpoch?: number;
 };
 
@@ -160,7 +158,7 @@ function clearComposer(
   setOpenThoughts({});
 }
 
-export default function ChatMode({ seedQuestion, seedResult, resetEpoch = 0 }: ChatModeProps) {
+export default function ChatMode({ resetEpoch = 0 }: ChatModeProps) {
   const [initial] = useState(loadStore);
   const restored = initial.threads.find((t) => t.id === initial.activeId) ?? initial.threads[0];
   const [threads, setThreads] = useState<ChatThread[]>(initial.threads);
@@ -173,19 +171,9 @@ export default function ChatMode({ seedQuestion, seedResult, resetEpoch = 0 }: C
   const [hint, setHint] = useState("");
   const [openDetails, setOpenDetails] = useState<Record<string, boolean>>({});
   const [openThoughts, setOpenThoughts] = useState<Record<string, boolean>>({});
-  const skipSeed = useRef(Boolean(restored?.messages.length));
   const prevEpoch = useRef(resetEpoch);
   const bottomRef = useRef<HTMLDivElement>(null);
   const { boxRef, taRef, resetSize, onGripPointerDown } = useComposerBox(draft);
-
-  useEffect(() => {
-    if (skipSeed.current || messages.length > 0 || !seedResult || !seedQuestion) return;
-    skipSeed.current = true;
-    setMessages([
-      { id: newId(), role: "user", text: seedQuestion },
-      { id: newId(), role: "assistant", text: summarizeAsk(seedResult), result: seedResult },
-    ]);
-  }, [messages.length, seedQuestion, seedResult]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -212,7 +200,6 @@ export default function ChatMode({ seedQuestion, seedResult, resetEpoch = 0 }: C
 
   function resetThread() {
     if (loading) return;
-    skipSeed.current = true;
     if (!messages.length) return;
     const id = newId();
     setActiveId(id);
@@ -226,7 +213,6 @@ export default function ChatMode({ seedQuestion, seedResult, resetEpoch = 0 }: C
     if (id === activeId || loading) return;
     const t = threads.find((x) => x.id === id);
     if (!t) return;
-    skipSeed.current = true;
     setActiveId(id);
     setMessages(t.messages);
     clearComposer(setDraft, setError, setHint, setOpenDetails, setOpenThoughts);
@@ -243,7 +229,6 @@ export default function ChatMode({ seedQuestion, seedResult, resetEpoch = 0 }: C
       saveStore({ activeId, threads: next });
       return;
     }
-    skipSeed.current = true;
     const fallback = next[0];
     if (fallback) {
       setActiveId(fallback.id);
@@ -268,7 +253,6 @@ export default function ChatMode({ seedQuestion, seedResult, resetEpoch = 0 }: C
   async function send() {
     const q = draft.trim();
     if (!q || loading) return;
-    skipSeed.current = true;
     const userMsg: ChatMessage = { id: newId(), role: "user", text: q };
     const next = [...messages, userMsg];
     setMessages(next);
