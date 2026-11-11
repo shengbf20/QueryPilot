@@ -60,7 +60,7 @@
   .head h2 { margin: 0; font-size: 15px; font-weight: 650; }
   .lookup { display: flex; gap: 8px; align-items: center; }
   .lookup input { flex: 1; }
-  input[type=text], textarea {
+  input[type=text], input[type=password], textarea {
     width: 100%;
     padding: 8px 10px;
     border: 1px solid var(--line);
@@ -109,6 +109,23 @@
   .help p { margin: 0 0 6px; }
   .help p:last-child { margin: 0; }
   .hidden { display: none; }
+  .access-gate {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 24px 16px;
+  }
+  .access-gate.hidden { display: none; }
+  .access-card { width: min(100%, 380px); margin-bottom: 0; }
+  .access-card h1 { font-size: 22px; }
+  .access-card .sub { margin: 6px 0 14px; }
+  .access-error {
+    margin: 10px 0 0;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--warn-soft);
+    color: var(--warn);
+  }
   .cols { display: grid; grid-template-columns: 148px 1fr; gap: 8px 10px; align-items: center; }
   .cname { font-size: 13px; color: var(--ink); word-break: break-all; }
   .edge {
@@ -163,6 +180,16 @@
 </style>
 </head>
 <body>
+<div id="accessGate" class="access-gate hidden">
+  <form class="card access-card" onsubmit="return submitAccess(event)">
+    <h1>QueryPilot</h1>
+    <p class="sub">输入访问密钥后即可登记新表。</p>
+    <label class="field" for="accessKey">访问密钥</label>
+    <input id="accessKey" type="password" autocomplete="current-password" placeholder="请输入访问密钥">
+    <p id="accessError" class="access-error hidden"></p>
+    <button class="primary block" type="submit">进入</button>
+  </form>
+</div>
 <header class="top">
   <div class="top-inner">
     <h1>新表登记</h1>
@@ -283,15 +310,84 @@ function showBanner(kind, text, keep) {
   if (!keep) setTimeout(() => { if (b.textContent === text) b.className = "banner"; }, 8000);
 }
 
+const ACCESS_STORAGE = "querypilot.accessKey";
+
+function accessHeaders(extra) {
+  const headers = Object.assign({}, extra || {});
+  const key = localStorage.getItem(ACCESS_STORAGE) || "";
+  if (key) headers["X-Access-Key"] = key;
+  return headers;
+}
+
 async function api(path, options) {
-  const resp = await fetch(path, options);
+  const opts = Object.assign({}, options);
+  opts.headers = accessHeaders(opts.headers);
+  const resp = await fetch(path, opts);
   let data = null;
   try { data = await resp.json(); } catch (_) { /* non-JSON */ }
   if (!resp.ok || (data && data.ok === false)) {
-    throw new Error((data && data.error) || ("HTTP " + resp.status));
+    const detail = data && (data.error || data.detail);
+    throw new Error(typeof detail === "string" ? detail : ("HTTP " + resp.status));
   }
   return data;
 }
+
+function showAccessGate() {
+  document.querySelector(".top").classList.add("hidden");
+  document.querySelector(".wrap").classList.add("hidden");
+  $("accessGate").classList.remove("hidden");
+  $("accessKey").focus();
+}
+
+async function ensureAccess() {
+  let required = true;
+  try {
+    const resp = await fetch("/api/access");
+    const data = await resp.json();
+    required = Boolean(data.required);
+  } catch (_) {
+    showAccessGate();
+    $("accessError").textContent = "无法连接服务";
+    $("accessError").classList.remove("hidden");
+    return;
+  }
+  if (!required) return;
+  const saved = localStorage.getItem(ACCESS_STORAGE) || "";
+  if (saved) {
+    const ok = await fetch("/api/access", { method: "POST", headers: { "X-Access-Key": saved } });
+    if (ok.ok) return;
+    localStorage.removeItem(ACCESS_STORAGE);
+  }
+  showAccessGate();
+}
+
+function submitAccess(event) {
+  event.preventDefault();
+  const key = $("accessKey").value.trim();
+  const err = $("accessError");
+  if (!key) {
+    err.textContent = "请输入访问密钥";
+    err.classList.remove("hidden");
+    return false;
+  }
+  fetch("/api/access", { method: "POST", headers: { "X-Access-Key": key } }).then((resp) => {
+    if (!resp.ok) {
+      err.textContent = "密钥不正确";
+      err.classList.remove("hidden");
+      return;
+    }
+    localStorage.setItem(ACCESS_STORAGE, key);
+    $("accessGate").classList.add("hidden");
+    document.querySelector(".top").classList.remove("hidden");
+    document.querySelector(".wrap").classList.remove("hidden");
+  }).catch(() => {
+    err.textContent = "无法连接服务";
+    err.classList.remove("hidden");
+  });
+  return false;
+}
+
+ensureAccess();
 
 async function loadQuestionnaire() {
   const table = $("table").value.trim();

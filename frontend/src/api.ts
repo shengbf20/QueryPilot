@@ -1,3 +1,4 @@
+import { accessHeaders } from "./access";
 import type { AskResponse, HistoryTurn } from "./types";
 
 export class ApiError extends Error {
@@ -29,7 +30,7 @@ export async function postAsk(
 ): Promise<AskResponse> {
   const resp = await fetch("/api/ask", {
     method: "POST",
-    headers: { "Content-Type": "application/json; charset=utf-8" },
+    headers: accessHeaders({ "Content-Type": "application/json; charset=utf-8" }),
     body: JSON.stringify({
       question,
       history,
@@ -52,7 +53,7 @@ export type LlmSettings = {
 };
 
 export async function getSettings(): Promise<LlmSettings> {
-  const resp = await fetch("/api/settings");
+  const resp = await fetch("/api/settings", { headers: accessHeaders() });
   if (!resp.ok) {
     throw new ApiError(await readErrorMessage(resp), resp.status);
   }
@@ -80,7 +81,7 @@ export type CatalogDetail = CatalogTable & {
 };
 
 export async function getCatalog(): Promise<CatalogTable[]> {
-  const resp = await fetch("/api/catalog/tables");
+  const resp = await fetch("/api/catalog/tables", { headers: accessHeaders() });
   if (!resp.ok) {
     throw new ApiError(await readErrorMessage(resp), resp.status);
   }
@@ -90,7 +91,9 @@ export async function getCatalog(): Promise<CatalogTable[]> {
 
 export async function getCatalogTable(name: string, offset: number, limit = 50): Promise<CatalogDetail> {
   const params = new URLSearchParams({ offset: String(offset), limit: String(limit) });
-  const resp = await fetch(`/api/catalog/tables/${encodeURIComponent(name)}?${params}`);
+  const resp = await fetch(`/api/catalog/tables/${encodeURIComponent(name)}?${params}`, {
+    headers: accessHeaders(),
+  });
   if (!resp.ok) {
     throw new ApiError(await readErrorMessage(resp), resp.status);
   }
@@ -104,7 +107,7 @@ export async function putSettings(body: {
 }): Promise<LlmSettings> {
   const resp = await fetch("/api/settings", {
     method: "PUT",
-    headers: { "Content-Type": "application/json; charset=utf-8" },
+    headers: accessHeaders({ "Content-Type": "application/json; charset=utf-8" }),
     body: JSON.stringify(body),
   });
   if (!resp.ok) {

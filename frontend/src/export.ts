@@ -1,3 +1,4 @@
+import { accessHeaders } from "./access";
 import { ApiError } from "./api";
 
 async function readErrorMessage(resp: Response): Promise<string> {
@@ -43,7 +44,7 @@ export async function downloadTable(
 ): Promise<void> {
   const resp = await fetch("/api/export", {
     method: "POST",
-    headers: { "Content-Type": "application/json; charset=utf-8" },
+    headers: accessHeaders({ "Content-Type": "application/json; charset=utf-8" }),
     body: JSON.stringify({ columns, rows, filename, format }),
   });
   if (!resp.ok) {

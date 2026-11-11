@@ -1,5 +1,7 @@
-import { useMemo, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import "./App.css";
+import { checkAccessKey, clearAccessKey, getAccessKey, getAccessStatus, setAccessKey } from "./access";
+import AccessGate from "./AccessGate";
 import { ApiError, postAsk } from "./api";
 import ChatMode from "./ChatMode";
 import TableMode from "./TableMode";
@@ -29,6 +31,8 @@ export default function App() {
   const [history, setHistory] = useState<HistoryTurn[]>([]);
   const [chatEpoch, setChatEpoch] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [gate, setGate] = useState<"checking" | "locked" | "open">("checking");
+  const [accessRequired, setAccessRequired] = useState(false);
   const { boxRef, taRef, resetSize } = useComposerBox(question);
 
   const clarifying = result?.stage === "clarify" || history.some((t) => t.role === "assistant");
@@ -48,6 +52,50 @@ export default function App() {
         .map((t) => ({ t, kind: "other" as const })),
     ];
   }, [result]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const status = await getAccessStatus();
+        if (cancelled) return;
+        if (!status.required) {
+          setGate("open");
+          return;
+        }
+        setAccessRequired(true);
+        const saved = getAccessKey();
+        if (saved && (await checkAccessKey())) {
+          if (!cancelled) setGate("open");
+          return;
+        }
+        clearAccessKey();
+        if (!cancelled) setGate("locked");
+      } catch {
+        if (!cancelled) setGate("locked");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function unlock(key: string): Promise<string> {
+    setAccessKey(key);
+    try {
+      const ok = await checkAccessKey();
+      if (!ok) {
+        clearAccessKey();
+        return "密钥不正确";
+      }
+    } catch {
+      clearAccessKey();
+      return "无法连接服务";
+    }
+    setAccessRequired(true);
+    setGate("open");
+    return "";
+  }
 
   async function onAsk() {
     const q = question.trim();
@@ -93,12 +141,28 @@ export default function App() {
     }
   }
 
+  if (gate === "checking") {
+    return (
+      <div className="gate">
+        <p className="muted">正在确认…</p>
+      </div>
+    );
+  }
+  if (gate === "locked") {
+    return <AccessGate onSubmit={unlock} />;
+  }
+
   return (
     <div className={uiMode === "chat" ? "app app-chat" : "app"}>
       <header className="header">
         <div className="header-row">
           <h1>QueryPilot</h1>
           <div className="header-actions">
+            {accessRequired ? (
+              <button type="button" className="header-ghost header-logout" onClick={() => { clearAccessKey(); setGate("locked"); }}>
+                退出
+              </button>
+            ) : null}
             <button
               type="button"
               className="header-ghost"
