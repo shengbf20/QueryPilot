@@ -50,5 +50,5 @@ npm run dev
 
 ```powershell
 npm run build
-# 产物 frontend/dist/；生产环境需自行将 /api 反代到 FastAPI
+# 产物 frontend/dist/。querypilot serve 会托管该目录，局域网用法见仓库 README。
 ```

@@ -273,6 +273,22 @@ npm run dev
 
 新表接入问卷：服务已启动时打开 http://127.0.0.1:8000/onboarding 。Swagger：http://127.0.0.1:8000/docs 。前端操作见 [`frontend/README.md`](frontend/README.md)。
 
+### 局域网使用
+
+页面和接口由同一个进程提供。其他电脑不用安装本项目；数据库和模型密钥留在运行服务的这台机器上。
+
+```powershell
+cd frontend
+npm install
+npm run build
+
+querypilot serve --host 0.0.0.0 --port 8000
+```
+
+本机打开 http://127.0.0.1:8000/ 。同一局域网的其他电脑打开 `http://<本机IPv4>:8000/` 。本机 IPv4 在 PowerShell 里用 `ipconfig` 查看。Windows 首次弹出防火墙提示时，允许 Python 访问专用网络。
+
+问数、对话、表格和新表登记都在这个地址上。改过前端后要重新 `npm run build`，再启动服务。开发时若要热更新，仍用上一节的两个终端；页面命令换成 `npm run dev -- --host` 后，其他电脑使用终端打印的 Network 地址，接口继续只监听本机。
+
 可单独带走的演示包：进入 `QueryPilot-demo/`，双击 `启动演示.bat`，浏览器打开 http://127.0.0.1:8787/（说明见 [`logs/14`](logs/14-独立演示包.md)）。
 
 ### 评测

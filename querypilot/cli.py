@@ -201,7 +201,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--host",
         type=str,
         default="127.0.0.1",
-        help="Bind host (default: 127.0.0.1)",
+        help="Bind host (default: 127.0.0.1; use 0.0.0.0 for LAN)",
     )
     serve_parser.add_argument(
         "--port",
