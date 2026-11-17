@@ -19,21 +19,21 @@ REPORT_DIR = ROOT / "logs" / "eval_reports"
 OUT_DIR = Path(__file__).resolve().parent
 
 # Extra3 is intent-fence only (sub-ms); it would collapse the scale.
-PATHS = ("快捷路径", "Agent 路径")
+PATHS = ("快捷模式", "多轮模式")
 SETS = ("官方", "补充评测一", "补充评测二")
 FILES = {
-    ("快捷路径", "官方"): "gold_fast_noshort.json",
-    ("快捷路径", "补充评测一"): "extra36_fast.json",
-    ("快捷路径", "补充评测二"): "extra2_fast.json",
-    ("Agent 路径", "官方"): "gold_agent_noshort.json",
-    ("Agent 路径", "补充评测一"): "extra36_agent.json",
-    ("Agent 路径", "补充评测二"): "extra2_agent.json",
+    ("快捷模式", "官方"): "gold_fast_noshort.json",
+    ("快捷模式", "补充评测一"): "extra36_fast.json",
+    ("快捷模式", "补充评测二"): "extra2_fast.json",
+    ("多轮模式", "官方"): "gold_agent_noshort.json",
+    ("多轮模式", "补充评测一"): "extra36_agent.json",
+    ("多轮模式", "补充评测二"): "extra2_agent.json",
 }
 
 # Fast group: deeper green; Agent group: lighter sage.
 BOX = {
-    "快捷路径": ("#1B4332", "#D8F3DC"),
-    "Agent 路径": ("#2D6A4F", "#B7E4C7"),
+    "快捷模式": ("#1B4332", "#D8F3DC"),
+    "多轮模式": ("#2D6A4F", "#B7E4C7"),
 }
 DOT = {
     "官方": "#1B4332",
@@ -147,8 +147,8 @@ def draw() -> Path:
 
     trans = blended_transform_factory(ax.transData, ax.transAxes)
     for left, right, label in (
-        (positions[0], positions[2], "快捷路径"),
-        (positions[3], positions[5], "Agent 路径"),
+        (positions[0], positions[2], "快捷模式"),
+        (positions[3], positions[5], "多轮模式"),
     ):
         ax.plot(
             [left, right],
